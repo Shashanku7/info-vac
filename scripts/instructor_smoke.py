@@ -80,4 +80,4 @@ if __name__ == "__main__":
     print(f"Parsed result: name='{result.name}'")
     print(f"Type: {type(result)}")
     assert isinstance(result, ProgramName), "Expected a ProgramName instance"
-    print("✓ Instructor+Gemini returned a valid Pydantic model.")
+    print("[OK] Instructor+Gemini returned a valid Pydantic model.")
