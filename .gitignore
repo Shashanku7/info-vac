@@ -1,0 +1,30 @@
+# Secrets — never commit real keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Virtual envs
+venv/
+venv_infovac/
+.venv/
+
+# Docker volumes
+postgres_data/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

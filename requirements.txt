@@ -1,0 +1,55 @@
+# Web API
+fastapi
+uvicorn[standard]
+
+# Validation
+pydantic
+pydantic-settings
+
+# Database
+sqlalchemy
+asyncpg
+alembic
+psycopg[binary]
+
+# LLM Orchestration
+langgraph
+langchain
+langchain-core
+
+# Structured Extraction
+instructor
+
+# LLM Providers
+anthropic
+google-generativeai
+
+# Search & Crawling
+tavily-python
+firecrawl-py
+
+# HTTP
+httpx
+aiohttp
+
+# Utilities
+python-dotenv
+tenacity
+orjson
+
+# SSE
+sse-starlette
+
+# Logging
+structlog
+
+# Testing
+pytest
+pytest-asyncio
+
+# Type checking (optional)
+mypy
+
+# Formatting / linting (optional)
+ruff
+black
