@@ -30,18 +30,52 @@ Sample stored URLs (human spot-check):
 ### Decisions made and why
 - Tavily: 1 query per source_type × 6 types × max 5 results = 30 candidates → deduplicate to ~15 unique URLs
 - Firecrawl: scrape each allowed URL; fall back to Tavily snippet if Firecrawl fails — guarantees raw_content is never empty for stored rows
-- Robots.txt: async httpx GET /robots.txt + urllib.robotparser before every Firecrawl call; allow on error (don't block on ambiguity)
+- Robots.txt: async httpx GET /robots.txt + urllib.robotparser before every Firecrawl call; **allow on error** — see OPEN_DECISIONS.md #1, this is a policy choice not a technical default
 - Source-type classification: query-of-origin is the primary signal; URL pattern matching is a secondary override (app store URLs → app_review regardless of which query found them)
 - Fake program test: assert list returned (possibly empty), assert no exception — Tavily may still return tangentially related results for any query
 
-### Exact next step
-- Creating: backend/models.py (add Source), backend/retriever.py, tests/conftest.py, tests/test_retriever.py, scripts/run_retriever.py
+### Exact next step — Phase 2: Extractor + Content Sanitizer + Citation-Verification Gate
+
+**Goal:** Run on Delta SkyMiles' already-fetched sources (in DB from Phase 1) and produce
+a fully schema-valid 43-field output where every non-null field is gate-verified.
+
+**File 1 — `backend/extractor.py`**
+- Function: `extract_fields(sources: list[Source], program: Program) -> ExtractedSchema`
+- Use `Instructor + Gemini-2.5-flash` with `Mode.MD_JSON`
+- Split the 43 fields into logical categories (earning, redemption, tiers, expiry, partners,
+  fees, customer-service). One Instructor call per category, not one monolithic call —
+  avoids context overflow and makes partial failures recoverable.
+- Pass source content as **tool-result data** (inside the messages array as
+  `role: tool` blocks), not as instruction text in the system prompt. This is the
+  grounding pattern: model cannot confabulate beyond what's in the tool results.
+- `ExtractedSchema`: Pydantic model with all 43 fields nullable + `confidence: float` +
+  `evidence_quote: str | None` per field. Store as rows in `extracted_fields` table.
+
+**File 2 — `backend/gate.py`**
+- Function: `gate_verify(field_name, claimed_value, evidence_quote, source_raw_content) -> bool`
+- Fuzzy-match `evidence_quote` against `source_raw_content` using `rapidfuzz` (ratio ≥ 0.80)
+- If no match: reject the field value to `null`, log to `pipeline_events` with
+  `event_type='gate_reject'`
+- Every non-null field in the final output must have passed the gate. No exceptions.
+
+**Entry point:** `POST /api/programs/{id}/extract` — loads sources from DB, calls
+`extract_fields`, runs gate on each non-null field, writes results to `extracted_fields`.
+
+**DoD for Phase 2:**
+- `pytest tests/test_extractor.py` green
+- Delta SkyMiles run produces ≥30/43 fields non-null
+- Zero non-null fields without a passing gate score
+- Gate correctly rejects an injected hallucinated value in `tests/test_gate.py`
 
 ### Do not reconsider
 - (see Phase 0 entry below)
+- `google-generativeai` SDK: still needed for instructor compat — do NOT migrate mid-phase
+- NullPool in conftest — do not revert, it's the only reliable fix for Windows Python 3.14
+- One Instructor call per category (not one monolithic) — settled above, don't collapse
 
 ### Open / blocked
-- none
+- See OPEN_DECISIONS.md — robots.txt policy and test mocking both need explicit decisions
+  before Phase 2 test suite is finalized.
 
 ---
 
