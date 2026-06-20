@@ -54,9 +54,10 @@ def run_smoke_test() -> ProgramName:
 
     # instructor.from_gemini requires a GenerativeModel instance (not the new genai.Client)
     # gemini-2.5-flash confirmed available on this key via list_models()
+    # Mode.MD_JSON replaces deprecated Mode.GEMINI_JSON (instructor >= 1.15)
     client = instructor.from_gemini(
         client=genai.GenerativeModel(model_name="gemini-2.5-flash"),
-        mode=Mode.GEMINI_JSON,
+        mode=Mode.MD_JSON,
     )
 
     result: ProgramName = client.chat.completions.create(

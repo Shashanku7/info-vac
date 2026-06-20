@@ -29,12 +29,14 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
-# asyncpg needs the raw postgres:// URL (not postgresql+asyncpg://)
-_raw_db_url = os.getenv(
-    "SYNC_DATABASE_URL",
-    "postgresql://infovac:infovac_dev@localhost:5432/infovac",
-)
-ASYNCPG_DSN = _raw_db_url.replace("postgresql://", "postgres://", 1)
+# asyncpg DSN — built from explicit parts to avoid driver-prefix issues
+# (SYNC_DATABASE_URL may have +psycopg prefix which asyncpg doesn't understand)
+_db_host = os.getenv("DB_HOST", "localhost")
+_db_port = int(os.getenv("DB_PORT", "5432"))
+_db_user = os.getenv("DB_USER", "infovac")
+_db_pass = os.getenv("DB_PASS", "infovac_dev")
+_db_name = os.getenv("DB_NAME", "infovac")
+ASYNCPG_DSN = f"postgresql://{_db_user}:{_db_pass}@{_db_host}:{_db_port}/{_db_name}"
 
 # Expected tables (7 core + 2 evidence tables = 9 total, but DoD says "all 7 tables exist"
 # — the spec was written before eval/redteam were added; we check all 9 to be safe)
