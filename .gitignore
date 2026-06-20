@@ -1,7 +1,10 @@
 # Secrets — never commit real keys
 .env
 
-# Python
+# Runtime logs
+uvicorn.log
+uvicorn_err.log
+
 __pycache__/
 *.pyc
 *.pyo

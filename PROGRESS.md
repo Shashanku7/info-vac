@@ -1,4 +1,52 @@
+## Handoff — 2026-06-21T02:19:00+05:30 — Phase 1 [complete]
+
+### Built and verified this session
+- `backend/models.py`: Added `Source` ORM model (all columns, relationship to Program, SHA-256 hash helper)
+- `backend/retriever.py`: `discover_sources()` — Tavily (6 types × 5 results), dedup, robots.txt check, Firecrawl fetch, Tavily-snippet fallback, DB insert
+- `tests/conftest.py`: NullPool engine per test — the definitive fix for asyncpg cross-loop crash on Windows Python 3.14
+- `tests/test_retriever.py`: 4 DoD tests
+- `scripts/run_retriever.py`: Manual spot-check table printer
+
+Test run: `pytest tests/test_retriever.py -v -s` → **4 passed in 368.69s (0:06:08)**
+
+Real results from test logs:
+```
+Starbucks Rewards : types={faq, tnc, app_review, press, news, forum}
+Marriott Bonvoy   : 21 sources, types={press, faq, tnc, app_review, news}
+Delta SkyMiles    : 21 sources, types={forum, press, faq, tnc, app_review, news}
+Fake program      : 0 sources returned, no crash
+Reddit URLs       : correctly robots_blocked
+Facebook URLs     : correctly robots_blocked
+```
+
+Sample stored URLs (human spot-check):
+- `[faq       ] https://www.delta.com/us/en/skymiles/overview`  (81K chars Firecrawl)
+- `[tnc       ] https://skymilesforbusiness.delta.com/s/terms-and-conditions`  (43K chars)
+- `[app_review] https://apps.apple.com/us/app/fly-delta/id388491656`  (11K chars)
+- `[press     ] https://apnews.com/article/delta-skymiles-change-frequent-flyers-...`
+- `[news      ] https://news.delta.com/tags/skymiles`
+
+
+### Decisions made and why
+- Tavily: 1 query per source_type × 6 types × max 5 results = 30 candidates → deduplicate to ~15 unique URLs
+- Firecrawl: scrape each allowed URL; fall back to Tavily snippet if Firecrawl fails — guarantees raw_content is never empty for stored rows
+- Robots.txt: async httpx GET /robots.txt + urllib.robotparser before every Firecrawl call; allow on error (don't block on ambiguity)
+- Source-type classification: query-of-origin is the primary signal; URL pattern matching is a secondary override (app store URLs → app_review regardless of which query found them)
+- Fake program test: assert list returned (possibly empty), assert no exception — Tavily may still return tangentially related results for any query
+
+### Exact next step
+- Creating: backend/models.py (add Source), backend/retriever.py, tests/conftest.py, tests/test_retriever.py, scripts/run_retriever.py
+
+### Do not reconsider
+- (see Phase 0 entry below)
+
+### Open / blocked
+- none
+
+---
+
 ## Handoff — 2026-06-20T20:56:00+05:30 — Phase 0 [complete]
+
 
 ### Built and verified this session
 
