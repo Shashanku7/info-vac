@@ -1,4 +1,28 @@
+## Handoff — 2026-06-21T07:57:00Z — Phase 4 [in progress]
+
+### Goal
+Phases 1-3 chained via LangGraph. Retries and live SSE progress events at each stage.
+
+### Exact next step — Phase 4: Full Pipeline Integration
+- `orchestrator/graph.py`: async nodes (retrieve→extract→verify→narrate_stub), tenacity retry on retrieve, `emit_event()` helper that inserts into `pipeline_events` (trigger fires pg_notify automatically)
+- `backend/models.py`: add `ExtractedField` + `PipelineEvent` ORM models
+- `backend/db.py`: add `make_background_session()` (NullPool, for background tasks)
+- `backend/main.py`: add `POST /api/programs/{id}/run` (starts background task), `GET /api/programs/{id}` (status), `GET /api/programs/{id}/stream` (SSE via asyncpg LISTEN)
+- `tests/test_orchestrator_e2e.py`:
+  - `test_e2e_run_completes` — `@pytest.mark.live` — full real API run → status=complete ≤5 min
+  - `test_pipeline_emits_events_in_order` — no marker — mock nodes, assert stage sequence
+  - `test_retry_on_timeout` — no marker — mock Tavily to raise then succeed, assert retry
+
+### DoD
+- End-to-end run via API → `programs.status = 'complete'` within 5 min
+- SSE events assert correct stage order: retrieving → extracting → verifying → complete
+- Mock timeout → retry fires, run succeeds
+- `pytest tests/test_orchestrator_e2e.py` — must show real output before phase is marked complete
+
+---
+
 ## Handoff — 2026-06-21T02:19:00+05:30 — Phase 1 [complete]
+
 
 ### Built and verified this session
 - `backend/models.py`: Added `Source` ORM model (all columns, relationship to Program, SHA-256 hash helper)

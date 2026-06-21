@@ -1,0 +1,74 @@
+"""Pipeline event emission and program status helpers.
+
+Separated from nodes.py so tests can patch emit_event independently
+without importing the full node chain.
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+import structlog
+from sqlalchemy import text, update
+
+from backend.db import make_background_session
+from backend.models import Program
+
+log = structlog.get_logger(__name__)
+
+
+async def emit_event(
+    program_id: str,
+    stage: str,
+    progress: float,
+    detail: str,
+) -> None:
+    """Insert a pipeline_events row.
+
+    The Postgres trigger `trg_pipeline_event` fires pg_notify automatically,
+    which SSE clients receive via asyncpg LISTEN on channel
+    `pipeline_events_{program_id}`.
+
+    Args:
+        program_id: UUID string of the program
+        stage:      Stage name, e.g. 'retrieving', 'extracting', 'complete'
+        progress:   0.0–1.0
+        detail:     Human-readable detail for the SSE client / UI
+    """
+    async with make_background_session() as session:
+        await session.execute(
+            text(
+                "INSERT INTO pipeline_events (program_id, stage, progress, detail) "
+                "VALUES (:pid, :stage, :progress, :detail)"
+            ),
+            {
+                "pid": uuid.UUID(program_id),
+                "stage": stage,
+                "progress": str(progress),
+                "detail": detail,
+            },
+        )
+        await session.commit()
+    log.info("event_emitted", stage=stage, progress=progress, program_id=program_id)
+
+
+async def set_status(
+    program_id: str,
+    status: str,
+    error: str | None = None,
+) -> None:
+    """Update programs.status (and optionally error_message / completed_at)."""
+    async with make_background_session() as session:
+        vals: dict[str, Any] = {"status": status}
+        if error:
+            vals["error_message"] = error[:2000]
+        if status == "complete":
+            vals["completed_at"] = datetime.now(timezone.utc)
+        await session.execute(
+            update(Program)
+            .where(Program.id == uuid.UUID(program_id))
+            .values(**vals)
+        )
+        await session.commit()
+    log.info("status_updated", program_id=program_id, status=status)

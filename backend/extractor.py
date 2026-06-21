@@ -23,7 +23,12 @@ Content-sanitizer pattern (R11 — injection defense):
 from __future__ import annotations
 
 import os
+import warnings
 from typing import Optional
+
+# Suppress FutureWarning from google-generativeai — instructor still uses it
+# internally (instructor >= 1.15). Remove when instructor migrates to google-genai.
+warnings.filterwarnings("ignore", category=FutureWarning, module="google")
 
 import instructor
 import google.generativeai as genai
@@ -37,7 +42,11 @@ log = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 def _make_client() -> instructor.Instructor:
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+    # GOOGLE_API_KEY matches the .env key name used in Phase 0 smoke test
+    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise EnvironmentError("GOOGLE_API_KEY (or GEMINI_API_KEY) is not set in .env")
+    genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-2.5-flash")
     return instructor.from_gemini(model, mode=instructor.Mode.MD_JSON)
 
