@@ -56,8 +56,14 @@ a fully schema-valid 43-field output where every non-null field is gate-verified
 - Pass source content as **tool-result data** (inside the messages array as
   `role: tool` blocks), not as instruction text in the system prompt. This is the
   grounding pattern: model cannot confabulate beyond what's in the tool results.
-- `ExtractedSchema`: Pydantic model with all 43 fields nullable + `confidence: float` +
+- `ExtractedSchema`: Pydantic model with all 43 fields nullable + `model_certainty_hint: float | None` +
   `evidence_quote: str | None` per field. Store as rows in `extracted_fields` table.
+- **CRITICAL — confidence column ownership:** `model_certainty_hint` is the LLM's
+  self-reported certainty (a low-weight tiebreaker signal at most). It NEVER writes
+  to `extracted_fields.confidence`. That column is populated ONLY by Phase 3's
+  deterministic formula: `0.5×corroboration + 0.3×authority + 0.2×recency`.
+  If Phase 3 is skipped or delayed, `extracted_fields.confidence` must stay NULL —
+  not be backfilled with the model's self-assessment.
 
 **File 2 — `backend/gate.py`**
 - Function: `gate_verify(field_name, claimed_value, evidence_quote, source_raw_content) -> bool`
@@ -82,8 +88,34 @@ a fully schema-valid 43-field output where every non-null field is gate-verified
 - One Instructor call per category (not one monolithic) — settled above, don't collapse
 
 ### Open / blocked
-- See OPEN_DECISIONS.md — robots.txt policy and test mocking both need explicit decisions
-  before Phase 2 test suite is finalized.
+- None — OPEN_DECISIONS.md #1 (robots.txt) and #2 (test mocking) both closed.
+
+---
+
+### Exact next step — Phase 3: Verifier (deterministic confidence + contradiction detection)
+
+**Goal:** Confidence and contradiction logic is correct and deterministic.
+Phase 3 builds no new LLM calls — it's pure computation over the gate-verified output
+from Phase 2.
+
+**File — `backend/verifier.py`**
+- Function: `compute_confidence(field_name, extracted_fields: list[ExtractedField], sources: list[Source]) -> float`
+  - `corroboration` = count of distinct sources supporting this field value / total sources (capped at 1.0)
+  - `authority` = weighted average of source_type tier scores:
+    - `tnc` = 1.0, `press` = 0.9, `faq` = 0.8, `news` = 0.7, `app_review` = 0.6, `forum` = 0.5
+  - `recency` = sigmoid decay: sources fetched within 30 days = 1.0; >365 days = 0.3
+  - Formula: `confidence = 0.5×corroboration + 0.3×authority + 0.2×recency`
+  - Writes result to `extracted_fields.confidence` — the ONLY writer of this column
+- Function: `detect_contradictions(field_name, extracted_fields: list[ExtractedField]) -> bool`
+  - Two or more gate-verified values for the same field that don't fuzzy-match each other
+  - Sets `extracted_fields.contradiction_flag = True`, caps confidence at 0.4
+
+**DoD for Phase 3 (`pytest tests/test_verifier.py`):**
+- Fixture inputs with known corroboration/authority/recency → formula output matches hand-calculated expected value exactly
+- Two sources with conflicting values → `contradiction_flag = True`, confidence ≤ 0.4
+- Run formula twice on identical input → byte-identical output (determinism regression test)
+
+**Human checkpoint:** None — pure formula, agent-verifiable.
 
 ---
 
