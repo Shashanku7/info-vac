@@ -1,211 +1,195 @@
-## Handoff — 2026-06-21T07:57:00Z — Phase 4 [in progress]
-
-### Goal
-Phases 1-3 chained via LangGraph. Retries and live SSE progress events at each stage.
-
-### Exact next step — Phase 4: Full Pipeline Integration
-- `orchestrator/graph.py`: async nodes (retrieve→extract→verify→narrate_stub), tenacity retry on retrieve, `emit_event()` helper that inserts into `pipeline_events` (trigger fires pg_notify automatically)
-- `backend/models.py`: add `ExtractedField` + `PipelineEvent` ORM models
-- `backend/db.py`: add `make_background_session()` (NullPool, for background tasks)
-- `backend/main.py`: add `POST /api/programs/{id}/run` (starts background task), `GET /api/programs/{id}` (status), `GET /api/programs/{id}/stream` (SSE via asyncpg LISTEN)
-- `tests/test_orchestrator_e2e.py`:
-  - `test_e2e_run_completes` — `@pytest.mark.live` — full real API run → status=complete ≤5 min
-  - `test_pipeline_emits_events_in_order` — no marker — mock nodes, assert stage sequence
-  - `test_retry_on_timeout` — no marker — mock Tavily to raise then succeed, assert retry
-
-### DoD
-- End-to-end run via API → `programs.status = 'complete'` within 5 min
-- SSE events assert correct stage order: retrieving → extracting → verifying → complete
-- Mock timeout → retry fires, run succeeds
-- `pytest tests/test_orchestrator_e2e.py` — must show real output before phase is marked complete
+# InfoVac — Progress & Handoff Log
 
 ---
 
-## Handoff — 2026-06-21T02:19:00+05:30 — Phase 1 [complete]
+## Handoff — 2026-06-21T13:29:00Z — Phase 4 [BLOCKED: live test failing]
 
+### Status
+Unit tests: **28/28 passed** (no API, no DB, no live marker).
+Live e2e test (`-m live`): **2 FAILED** — root cause identified, fix in progress.
 
-### Built and verified this session
-- `backend/models.py`: Added `Source` ORM model (all columns, relationship to Program, SHA-256 hash helper)
-- `backend/retriever.py`: `discover_sources()` — Tavily (6 types × 5 results), dedup, robots.txt check, Firecrawl fetch, Tavily-snippet fallback, DB insert
-- `tests/conftest.py`: NullPool engine per test — the definitive fix for asyncpg cross-loop crash on Windows Python 3.14
-- `tests/test_retriever.py`: 4 DoD tests
-- `scripts/run_retriever.py`: Manual spot-check table printer
+### What Phase 4 Built
+| File | Lines | Role |
+|---|---|---|
+| `orchestrator/state.py` | 37 | PipelineState TypedDict + iter_fields() |
+| `orchestrator/events.py` | 74 | emit_event() + set_status() |
+| `orchestrator/nodes.py` | 238 | 4 async nodes: retrieve (tenacity 3×), extract, verify, narrate stub |
+| `orchestrator/graph.py` | 58 | Thin wiring + run_pipeline() entry point |
+| `backend/models.py` | 120 | Added ExtractedField + PipelineEvent ORM models |
+| `backend/db.py` | 40 | Added make_background_session() NullPool ctx manager |
+| `backend/main.py` | 161 | POST /run, GET /{id}, GET /{id}/stream (asyncpg LISTEN SSE) |
+| `tests/test_orchestrator_unit.py` | 303 | 4 unit tests: event order, retry, iter_fields, short-circuit |
+| `tests/test_orchestrator_e2e.py` | 131 | 2 live tests (@pytest.mark.live) |
 
-Test run: `pytest tests/test_retriever.py -v -s` → **4 passed in 368.69s (0:06:08)**
+### Live Test Failure (actual output)
+```
+tests/test_orchestrator_e2e.py::test_e2e_run_completes  FAILED
+tests/test_orchestrator_e2e.py::test_sse_events_in_correct_order  FAILED
+2 failed in 191.01s (0:03:11)
+```
+**Root cause:** `emit_event()` and `set_status()` each created a NEW NullPool engine per call.
+During Firecrawl retrieval (20 concurrent threads + ~25 event emissions), repeated engine
+creation starved the asyncio event loop, causing GET /api/programs/{id} to timeout at the
+test's 30s per-request limit.
 
-Real results from test logs:
+**Fix applied to `orchestrator/events.py`:**
+- Switched from `make_background_session()` (NullPool, new engine per call) →
+  `AsyncSessionLocal()` (shared pool, same event loop as FastAPI — safe because
+  `asyncio.create_task()` runs on the same loop, not a separate one)
+
+**Fix still needed:**
+- `orchestrator/nodes.py` verify_node: same pool fix for the verify DB writes
+- `tests/test_orchestrator_e2e.py`: raise per-request httpx timeout from 30s → 90s
+  (retrieval alone takes ~2min per Phase 1 data)
+- Re-run `pytest tests/test_orchestrator_e2e.py -m live -v -s` and confirm green
+
+### Next Step (to close Phase 4)
+1. Apply pool fix to `nodes.py` verify_node
+2. Raise test timeout
+3. Kill old uvicorn task, restart uvicorn
+4. Run live tests, report real output
+5. If green: commit + push + mark Phase 4 complete
+
+---
+
+## Handoff — 2026-06-21T07:57:00Z — Phases 2 + 3 [COMPLETE]
+
+### Phase 2 — Extractor + Gate
+Test run: **10/10 gate tests passed in 0.70s**
+
+Built:
+- `backend/extractor.py` (343L): 8-category ExtractedSchema, one Instructor call per category,
+  content-sanitizer injection defense, `model_certainty_hint` (NOT `confidence`)
+- `backend/gate.py` (156L): deterministic rapidfuzz gate, `partial_ratio ≥ 0.80`,
+  `GateResult` dataclass, batch verify helper
+- `tests/test_gate.py` (199L): 10 tests — null pass, missing-quote reject, exact match,
+  hallucination reject (DoD), batch, determinism — no live marker
+
+**CRITICAL design rule (confidence column ownership):**
+- `model_certainty_hint` = LLM self-assessment, a hint only. NEVER written to `extracted_fields.confidence`.
+- `extracted_fields.confidence` is ONLY written by Phase 3's verifier formula.
+
+### Phase 3 — Verifier
+Test run: **14/14 verifier tests passed in 0.70s**
+
+Built:
+- `backend/verifier.py` (252L): `confidence = 0.5×corroboration + 0.3×authority + 0.2×recency`,
+  contradiction detection + cap at 0.4, ONLY writer of `extracted_fields.confidence`
+- `tests/test_verifier.py` (255L): 14 tests — hand-calculated formula, mixed authority,
+  stale recency, contradiction cap (DoD), 10-run determinism (DoD) — no live marker
+
+Authority weights: `tnc=1.0, press=0.9, faq=0.8, news=0.7, app_review=0.6, forum=0.5`
+Recency: linear decay 1.0 (≤30 days) → 0.3 (≥365 days), floor 0.3
+
+### Decisions closed this session
+- **OPEN_DECISIONS.md #1** (robots.txt): Option D — allow + mark `fetch_status='robots_unverified'`
+- **OPEN_DECISIONS.md #2** (test mocking): Option B — `@pytest.mark.live` marker
+  - Default `pytest` = fast, no API calls, <5s
+  - Phase-gate: `pytest -m live -v -s`
+
+---
+
+## Handoff — 2026-06-21T02:19:00+05:30 — Phase 1 [COMPLETE]
+
+### Test run (actual output)
+```
+pytest tests/test_retriever.py -m live -v -s → 4 passed in 368.69s (0:06:08)
+```
+
+### Built and verified
+- `backend/models.py`: Source ORM model
+- `backend/retriever.py`: discover_sources() — Tavily (6 types × 5 results), dedup,
+  robots.txt check (3-value: allowed/blocked/robots_unverified), Firecrawl fetch,
+  Tavily-snippet fallback, DB insert
+- `tests/conftest.py`: NullPool engine per test — definitive fix for asyncpg cross-loop
+  crash on Windows Python 3.14
+- `tests/test_retriever.py`: 4 DoD tests (@pytest.mark.live)
+- `scripts/run_retriever.py`: manual spot-check table printer
+
+### Real results verified
 ```
 Starbucks Rewards : types={faq, tnc, app_review, press, news, forum}
 Marriott Bonvoy   : 21 sources, types={press, faq, tnc, app_review, news}
 Delta SkyMiles    : 21 sources, types={forum, press, faq, tnc, app_review, news}
-Fake program      : 0 sources returned, no crash
-Reddit URLs       : correctly robots_blocked
-Facebook URLs     : correctly robots_blocked
+Fake program      : 0 sources, no crash
+Reddit/Facebook   : correctly robots_blocked
 ```
 
-Sample stored URLs (human spot-check):
-- `[faq       ] https://www.delta.com/us/en/skymiles/overview`  (81K chars Firecrawl)
-- `[tnc       ] https://skymilesforbusiness.delta.com/s/terms-and-conditions`  (43K chars)
-- `[app_review] https://apps.apple.com/us/app/fly-delta/id388491656`  (11K chars)
-- `[press     ] https://apnews.com/article/delta-skymiles-change-frequent-flyers-...`
-- `[news      ] https://news.delta.com/tags/skymiles`
-
-
-### Decisions made and why
-- Tavily: 1 query per source_type × 6 types × max 5 results = 30 candidates → deduplicate to ~15 unique URLs
-- Firecrawl: scrape each allowed URL; fall back to Tavily snippet if Firecrawl fails — guarantees raw_content is never empty for stored rows
-- Robots.txt: async httpx GET /robots.txt + urllib.robotparser before every Firecrawl call; **allow on error** — see OPEN_DECISIONS.md #1, this is a policy choice not a technical default
-- Source-type classification: query-of-origin is the primary signal; URL pattern matching is a secondary override (app store URLs → app_review regardless of which query found them)
-- Fake program test: assert list returned (possibly empty), assert no exception — Tavily may still return tangentially related results for any query
-
-### Exact next step — Phase 2: Extractor + Content Sanitizer + Citation-Verification Gate
-
-**Goal:** Run on Delta SkyMiles' already-fetched sources (in DB from Phase 1) and produce
-a fully schema-valid 43-field output where every non-null field is gate-verified.
-
-**File 1 — `backend/extractor.py`**
-- Function: `extract_fields(sources: list[Source], program: Program) -> ExtractedSchema`
-- Use `Instructor + Gemini-2.5-flash` with `Mode.MD_JSON`
-- Split the 43 fields into the **8 categories from the problem statement** (infovac_ps.md line 54-62):
-  1. **Program Basics** — name, brand, industry, type, geography, membership count
-  2. **Partnerships** — partner names, partnership type (earn/burn/both), details
-  3. **Earn Mechanics** — base earn rate, bonus categories, non-transactional earn
-  4. **Digital Experience** — mobile app, app ratings, personalization, gamification
-  5. **Burn Mechanics** — redemption options, thresholds, point value, expiry policy
-  6. **Member Sentiment** — ratings, common praise, common complaints, sources checked
-  7. **Tier System** — tier names, qualification criteria, benefits, qualification period
-  8. **Competitive Position** — key differentiators, weaknesses, closest competitors
-- One Instructor call per category, not one monolithic call —
-  avoids context overflow and makes partial failures recoverable.
-- Pass source content as **tool-result data** (inside the messages array as
-  `role: tool` blocks), not as instruction text in the system prompt. This is the
-  grounding pattern: model cannot confabulate beyond what's in the tool results.
-- `ExtractedSchema`: Pydantic model with all 43 fields nullable + `model_certainty_hint: float | None` +
-  `evidence_quote: str | None` per field. Store as rows in `extracted_fields` table.
-- **CRITICAL — confidence column ownership:** `model_certainty_hint` is the LLM's
-  self-reported certainty (a low-weight tiebreaker signal at most). It NEVER writes
-  to `extracted_fields.confidence`. That column is populated ONLY by Phase 3's
-  deterministic formula: `0.5×corroboration + 0.3×authority + 0.2×recency`.
-  If Phase 3 is skipped or delayed, `extracted_fields.confidence` must stay NULL —
-  not be backfilled with the model's self-assessment.
-
-**File 2 — `backend/gate.py`**
-- Function: `gate_verify(field_name, claimed_value, evidence_quote, source_raw_content) -> bool`
-- Fuzzy-match `evidence_quote` against `source_raw_content` using `rapidfuzz` (ratio ≥ 0.80)
-- If no match: reject the field value to `null`, log to `pipeline_events` with
-  `event_type='gate_reject'`
-- Every non-null field in the final output must have passed the gate. No exceptions.
-
-**Entry point:** `POST /api/programs/{id}/extract` — loads sources from DB, calls
-`extract_fields`, runs gate on each non-null field, writes results to `extracted_fields`.
-
-**DoD for Phase 2:**
-- `pytest tests/test_extractor.py` green
-- Delta SkyMiles run produces ≥30/43 fields non-null
-- Zero non-null fields without a passing gate score
-- Gate correctly rejects an injected hallucinated value in `tests/test_gate.py`
-
-### Do not reconsider
-- (see Phase 0 entry below)
-- `google-generativeai` SDK: still needed for instructor compat — do NOT migrate mid-phase
-- NullPool in conftest — do not revert, it's the only reliable fix for Windows Python 3.14
-- One Instructor call per category (not one monolithic) — settled above, don't collapse
-
-### Open / blocked
-- None — OPEN_DECISIONS.md #1 (robots.txt) and #2 (test mocking) both closed.
+### Decisions
+- Tavily: 1 query/type × 6 types × 5 results = 30 candidates → dedup → ~15 unique
+- Firecrawl: full markdown fetch; Tavily snippet fallback guarantees raw_content never empty
+- robots.txt: 3-value return (allowed/blocked/robots_unverified) — Decision #1-D
+- Source-type: query-of-origin primary, URL pattern override secondary
 
 ---
 
-### Exact next step — Phase 3: Verifier (deterministic confidence + contradiction detection)
+## Handoff — 2026-06-20T20:56:00+05:30 — Phase 0 [COMPLETE]
 
-**Goal:** Confidence and contradiction logic is correct and deterministic.
-Phase 3 builds no new LLM calls — it's pure computation over the gate-verified output
-from Phase 2.
-
-**File — `backend/verifier.py`**
-- Function: `compute_confidence(field_name, extracted_fields: list[ExtractedField], sources: list[Source]) -> float`
-  - `corroboration` = count of distinct sources supporting this field value / total sources (capped at 1.0)
-  - `authority` = weighted average of source_type tier scores:
-    - `tnc` = 1.0, `press` = 0.9, `faq` = 0.8, `news` = 0.7, `app_review` = 0.6, `forum` = 0.5
-  - `recency` = sigmoid decay: sources fetched within 30 days = 1.0; >365 days = 0.3
-  - Formula: `confidence = 0.5×corroboration + 0.3×authority + 0.2×recency`
-  - Writes result to `extracted_fields.confidence` — the ONLY writer of this column
-- Function: `detect_contradictions(field_name, extracted_fields: list[ExtractedField]) -> bool`
-  - Two or more gate-verified values for the same field that don't fuzzy-match each other
-  - Sets `extracted_fields.contradiction_flag = True`, caps confidence at 0.4
-
-**DoD for Phase 3 (`pytest tests/test_verifier.py`):**
-- Fixture inputs with known corroboration/authority/recency → formula output matches hand-calculated expected value exactly
-- Two sources with conflicting values → `contradiction_flag = True`, confidence ≤ 0.4
-- Run formula twice on identical input → byte-identical output (determinism regression test)
-
-**Human checkpoint:** None — pure formula, agent-verifiable.
-
----
-
-## Handoff — 2026-06-20T20:56:00+05:30 — Phase 0 [complete]
-
-
-### Built and verified this session
-
-- `docker-compose.yml`: Postgres 15-alpine, healthcheck, persistent volume
-- `alembic/versions/0001_initial_schema.py`: all 9 tables, LISTEN/NOTIFY trigger, 5 indexes
-- `backend/main.py`: FastAPI `POST /api/programs` → UUID insert
-- `backend/db.py`: async SQLAlchemy + asyncpg session
-- `backend/models.py`: Program ORM model
-- `orchestrator/graph.py`: LangGraph 4-node stub (retrieve→extract→verify→narrate)
-- `scripts/instructor_smoke.py`: Instructor+Gemini-2.5-flash one-field Pydantic extraction
-- `tests/phase0_test.py`: 5 pytest DoD checks
-
-Test run:
+### Test run (actual output)
 ```
 pytest tests/phase0_test.py -v
-============================= test session starts =============================
-platform win32 -- Python 3.14.3, pytest-9.1.1
-plugins: anyio-4.14.0, asyncio-1.4.0
-
-tests/phase0_test.py::test_postgres_reachable_and_all_tables_exist PASSED [ 20%]
-tests/phase0_test.py::test_post_programs_returns_uuid PASSED             [ 40%]
-tests/phase0_test.py::test_uuid_is_real_row_in_programs PASSED           [ 60%]
-tests/phase0_test.py::test_instructor_returns_parsed_pydantic_output PASSED [ 80%]
-tests/phase0_test.py::test_langgraph_graph_compiles PASSED               [100%]
-
-======================== 5 passed, 2 warnings in 8.38s ========================
+5 passed in 8.38s
 ```
 
-### Decisions made and why
+### Built and verified
+- `docker-compose.yml`: Postgres 15-alpine, healthcheck, persistent volume
+- `alembic/versions/0001_initial_schema.py`: 9 tables, LISTEN/NOTIFY trigger, 5 indexes
+- `backend/main.py`: FastAPI POST /api/programs → UUID insert
+- `backend/db.py`: async SQLAlchemy + asyncpg session
+- `backend/models.py`: Program ORM model
+- `orchestrator/graph.py`: LangGraph 4-node stub
+- `scripts/instructor_smoke.py`: Instructor+Gemini-2.5-flash one-field extraction
+- `tests/phase0_test.py`: 5 DoD checks
 
-- `google-generativeai` (old SDK) kept for instructor compatibility — instructor 1.15.x
-  `from_gemini()` requires `genai.GenerativeModel`, which is only in the old package.
-  Migration to `google.genai` deferred to Phase 1 when we wire real extraction.
-- `Mode.MD_JSON` replaces deprecated `Mode.GEMINI_JSON` (instructor >= 1.15).
-- asyncpg DSN built from raw host/port/user/pass instead of transforming SYNC_DATABASE_URL
-  — avoids breakage when the URL has driver prefixes like `+psycopg`.
-- `alembic.ini` and SYNC_DATABASE_URL use `postgresql+psycopg://` — psycopg v3 (binary)
-  is installed; psycopg2 is not.
-- Gemini model: `gemini-2.5-flash` — confirmed available on this key via `list_models()`.
-  Key starts with `AQ.` (internal/workspace key), not the public `AIza...` format.
-  `gemini-1.5-flash` returned 404 on this key type.
+### Decisions
+- `google-generativeai` (old SDK) kept for instructor compat — `instructor.from_gemini()`
+  requires `genai.GenerativeModel`. FutureWarning suppressed in pytest.ini.
+- `Mode.MD_JSON` replaces deprecated `Mode.GEMINI_JSON` (instructor ≥ 1.15)
+- 9 tables (not 7) — eval_ground_truth + redteam_tests per SOLUTION.md Day 8-9 plan
+- No Redis — Postgres LISTEN/NOTIFY replaces it entirely
+- NullPool in test conftest — only reliable fix for Windows Python 3.14 asyncpg
 
-### Deviated from SOLUTION.md / PHASES.md?
-- none for Phase 0 scope.
+---
 
-### Exact next step
-- Phase 1: Retriever — Tavily search (discovery) + Firecrawl fetch (page content).
-  Start with `backend/retriever.py`: `discover_sources(program_name: str) -> list[Source]`
-  using Tavily with source-type queries (FAQ, T&C, app review, press, forum).
-  Tavily key: in .env as TAVILY_API_KEY. Firecrawl key: FIRECRAWL_API_KEY.
-  Target: given a program name, return ≥5 URLs with source_type classification,
-  stored in the `sources` table.
+## Do Not Reconsider (accumulated invariants)
+- No Redis anywhere — Postgres LISTEN/NOTIFY handles all pub/sub
+- NullPool in `tests/conftest.py` — do not revert
+- One Instructor call per category (not one monolithic call)
+- `model_certainty_hint` ≠ `confidence` — only verifier.py writes `extracted_fields.confidence`
+- `google-generativeai` SDK kept for instructor compat — FutureWarning suppressed, not fixed
+- `asyncio.create_task()` in FastAPI + same event loop → use `AsyncSessionLocal` for emit/status
+  (NullPool only for test fixtures and thread-executor callers)
+- All files must stay ≤ 500 lines — split into modules if approaching limit
+- Default `pytest` = fast (no live marker) — always runs clean in <10s
+- Phase-gate certification = `pytest -m live`
 
-### Do not reconsider
-- No Redis (Postgres LISTEN/NOTIFY replaces it entirely — settled in SOLUTION.md).
-- 9 tables (not 7) — eval_ground_truth + redteam_tests added per SOLUTION.md Day 8-9 plan.
-- psycopg v3 (not psycopg2) — matches requirements.txt, no reason to add the old driver.
-- google-generativeai kept for now (instructor compatibility), migrate to google.genai in Phase 1.
+---
 
-### Open / blocked
-- `google.generativeai` FutureWarning will remain until instructor is updated or we migrate
-  to google.genai in Phase 1 extraction work. Non-blocking for Phase 0.
-- Docker Desktop must be running manually before `docker compose up` and pytest.
-  Consider adding a `wait_for_postgres` fixture in Phase 1 tests.
+## Pending Phases
+
+### Phase 5 — Narrator (next after Phase 4 live tests green)
+- `backend/narrator.py`: generate_narrative(program_id) → 500-1000 word brief
+- Use Gemini-2.5-flash, word count enforced in code (not LLM-trusted)
+- Input: gate-verified extracted_fields rows only
+- Output: stored in `narratives` table
+- DoD: `pytest tests/test_narrator.py` — word count within bounds, no hallucination beyond
+  extracted_fields data
+
+### Phase 6 — Comparator
+- `backend/comparator.py`: compare two programs by UUID
+- Input: extracted_fields rows for both programs
+- Output: strategic diff stored in `comparisons` table
+
+### Phase 7 — Chat (grounded Q&A)
+- Grounded-only follow-up Q&A (no outside knowledge)
+- Input re-injected from extracted_fields + narratives every turn
+
+### Phase 8 — Eval harness + threshold calibration
+- Hand-verify 8-10 programs → populate eval_ground_truth
+- Calibrate gate threshold (currently 0.80, untuned placeholder)
+- Calibrate confidence null-threshold against rubric math (+1/+0.5/0/-3)
+
+### Phase 9 — Red-team + injection tests
+- Indirect prompt injection: scraped content containing instructions
+- Low web-presence programs: graceful null, no padding
+- Recently-rebranded programs: contradiction detection verification

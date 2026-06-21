@@ -12,7 +12,12 @@ from typing import Any
 import structlog
 from sqlalchemy import text, update
 
-from backend.db import make_background_session
+# emit_event and set_status run inside asyncio.create_task() on the SAME
+# event loop as FastAPI/uvicorn. Using the shared pool (AsyncSessionLocal) is
+# safe here — and much faster than creating a new NullPool engine per call.
+# (NullPool is reserved for tests and for discover_sources which runs in a
+# thread executor via run_in_executor, where pool sharing is unsafe.)
+from backend.db import AsyncSessionLocal
 from backend.models import Program
 
 log = structlog.get_logger(__name__)
@@ -29,14 +34,8 @@ async def emit_event(
     The Postgres trigger `trg_pipeline_event` fires pg_notify automatically,
     which SSE clients receive via asyncpg LISTEN on channel
     `pipeline_events_{program_id}`.
-
-    Args:
-        program_id: UUID string of the program
-        stage:      Stage name, e.g. 'retrieving', 'extracting', 'complete'
-        progress:   0.0–1.0
-        detail:     Human-readable detail for the SSE client / UI
     """
-    async with make_background_session() as session:
+    async with AsyncSessionLocal() as session:
         await session.execute(
             text(
                 "INSERT INTO pipeline_events (program_id, stage, progress, detail) "
@@ -59,7 +58,7 @@ async def set_status(
     error: str | None = None,
 ) -> None:
     """Update programs.status (and optionally error_message / completed_at)."""
-    async with make_background_session() as session:
+    async with AsyncSessionLocal() as session:
         vals: dict[str, Any] = {"status": status}
         if error:
             vals["error_message"] = error[:2000]
@@ -72,3 +71,4 @@ async def set_status(
         )
         await session.commit()
     log.info("status_updated", program_id=program_id, status=status)
+
