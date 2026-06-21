@@ -1,73 +1,57 @@
 # OPEN_DECISIONS.md
 
 Decisions that require explicit human input before implementation continues.
-Each entry states: what was done, why it's not settled, and the concrete options.
+Status: ✅ CLOSED or ⏳ OPEN.
 
 ---
 
 ## #1 — Robots.txt: what to do when the check fails or is ambiguous
 
-**Current behaviour (Phase 1, `backend/retriever.py` line ~110):**
-```python
-except Exception:
-    pass
-return True  # allow on error
-```
-If `/robots.txt` returns a non-200, times out, or fails to parse, the URL is treated as **allowed** and Firecrawl will scrape it.
+**Status: ✅ CLOSED — Decision: D (Allow + mark `fetch_status='robots_unverified'`)**
 
-**Why this deserves an explicit decision:**
-The whole robots.txt check exists for compliance — it's not a nice-to-have.
-"Allow on error" is the opposite of a fail-safe default: a site might be unreachable
-precisely because it's blocking scrapers. Silently proceeding undermines the feature's
-stated purpose. The agent made this call alone without flagging it.
+**Decision rationale (user, 2026-06-21):**
+> Fail-closed (B) risks killing legitimate sources on a transient timeout. Fail-open silently
+> (A) hides the ambiguity, which is inconsistent with everything else in this system — you
+> don't silently resolve uncertainty anywhere else, don't start here. D is the only option
+> that's honest about what happened.
+> Caveat: hackathon-scope answer — revisit before any real Kobie production use,
+> per the legal-review flag already in SOLUTION.md.
 
-**Options:**
-
-| Option | Behaviour on error/ambiguity | Trade-off |
-|--------|------------------------------|-----------|
-| **A — Allow (current)** | Scrape anyway | Maximum recall; weak compliance story |
-| **B — Deny** | Skip the URL; log `fetch_status='robots_unknown'` | Safe default; may reduce recall on flaky sites |
-| **C — Deny + retry once** | Wait 2s, retry the robots fetch; deny if still fails | Best of both; one extra network call per URL |
-| **D — Allow, but mark** | Scrape but set `fetch_status='robots_unverified'` | Transparent; lets humans filter later |
-
-**Recommendation (agent's view):** Option D for Phase 2. It preserves recall,
-makes the uncertainty explicit in the DB, and lets the gate/eval layer decide
-whether to trust unverified sources. Pure denial (B) would hurt extraction quality
-for programs whose sites happen to have flaky robots.txt serving.
-
-**To close this:** Pick A/B/C/D (or describe a variant). The implementation change
-is 3 lines in `_check_robots()`.
+**Implementation (done in `backend/retriever.py`):**
+- `_check_robots()` now returns `'allowed' | 'blocked' | 'robots_unverified'` (not bool)
+- `'blocked'` → URL is skipped entirely, logged as `robots_blocked`
+- `'robots_unverified'` → URL is fetched AND `fetch_status='robots_unverified'` stored in DB
+- Gate/eval layer can filter on `fetch_status='robots_unverified'` if needed
 
 ---
 
 ## #2 — Test suite: live API calls vs mocked for routine runs
 
-**Current behaviour (`tests/test_retriever.py`):**
-All 4 tests make real Tavily + Firecrawl calls. Runtime: ~6 minutes per run.
-Tavily free tier: ~1,000 req/day. Firecrawl free tier: limited credits (not unlimited).
-4 tests × 4 programs × 6 Tavily queries + up to 20 Firecrawl calls each = significant quota burn per run.
+**Status: ✅ CLOSED — Decision: B (`@pytest.mark.live` marker)**
 
-**Why this matters:**
-The Phase 1 tests are the phase-gate verification, run once at handoff. But if
-they also run in normal dev (e.g., `pytest` with no filter), credits burn fast and
-tests are fragile on flaky external APIs.
+**Decision rationale (user, 2026-06-21):**
+> `@pytest.mark.live`, with one refinement: gate/formula logic tests (fuzzy-match math,
+> confidence weights) are pure functions and should run unmocked-but-API-free by construction,
+> no flag needed either way. Reserve `@pytest.mark.live` only for tests that actually hit
+> Tavily/Firecrawl/Gemini. Default pytest run = fast logic tests.
+> Phase-gate certification = explicit `pytest -m live`.
 
-**Options:**
+**Implementation (done):**
+- `pytest.ini`: registered `live` marker with `--strict-markers` (typo-markers error, not silently pass)
+- `tests/test_retriever.py`: `pytestmark = pytest.mark.live` at module level
+- Phase 0 tests (`tests/phase0_test.py`): NOT marked live — they use asyncpg/httpx directly,
+  no Tavily/Firecrawl/Gemini (smoke test is the only Gemini call, acceptable)
+- Phase 2 extractor tests (`tests/test_extractor.py`): gate/formula tests = no marker;
+  tests that hit Gemini for extraction = `@pytest.mark.live`
+- Phase 2 gate tests (`tests/test_gate.py`): pure fuzzy-match math = no marker, always runs
 
-| Option | How | When live calls run |
-|--------|-----|---------------------|
-| **A — Keep as-is** | No change | Every `pytest` run |
-| **B — `@pytest.mark.live` gate** | Mark tests needing real APIs; run with `pytest -m live` | Only when explicitly requested |
-| **C — Mock by default, live with flag** | `conftest` fixture uses `respx`/`unittest.mock` to mock Tavily+Firecrawl; `--live` flag disables mock | Default: fast, free; phase-gate: real |
-| **D — Separate test files** | `tests/test_retriever_mock.py` (always runs) + `tests/test_retriever_live.py` (phase-gate only) | Explicit by filename |
-
-**Recommendation (agent's view):** Option B is the fastest to implement (one decorator
-+ `pytest.ini` `markers` entry). Option C gives the best long-term value but adds mock
-maintenance. For a hackathon timeline, B is the right trade-off.
-
-**To close this:** Pick an option. If B or C, the agent will implement mocks and
-add the `live` marker to existing tests before Phase 2 test suite is written.
+**Workflow:**
+```bash
+pytest                    # fast: logic + phase0 (seconds)
+pytest -m live            # full phase-gate certification (minutes, burns API quota)
+pytest -m live -v -s      # phase-gate with verbose output for human review
+```
 
 ---
 
-*Last updated: 2026-06-21 — Phase 1 complete, Phase 2 not yet started.*
+*Last updated: 2026-06-21 — Both decisions closed before Phase 2 starts.*

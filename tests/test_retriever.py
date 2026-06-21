@@ -4,11 +4,19 @@ Prerequisites:
   1. docker compose up -d   (Postgres running, schema migrated)
   2. .env with TAVILY_API_KEY and FIRECRAWL_API_KEY set
 
-Run:
-    pytest tests/test_retriever.py -v -s
+Markers:
+  All tests here are @pytest.mark.live — they make real Tavily+Firecrawl calls.
+  Decision #2 (OPEN_DECISIONS.md): default 'pytest' run skips live tests;
+  phase-gate certification uses 'pytest -m live'.
 
-Human checkpoint (automated tests can't catch this):
-  After running, open 2-3 of the printed URLs in a browser.
+  Run for certification:
+      pytest tests/test_retriever.py -m live -v -s
+
+  Run fast logic-only (default, no API calls):
+      pytest  (live tests automatically skipped)
+
+Human checkpoint:
+  After a live run, open 2-3 of the printed URLs in a browser.
   Are they actually pages about that loyalty program, or tangentially related?
 """
 import pytest
@@ -16,6 +24,9 @@ import pytest
 from backend.models import Source
 from backend.retriever import discover_sources
 from sqlalchemy import select
+
+# All tests in this file require live API calls
+pytestmark = pytest.mark.live
 
 
 # ---------------------------------------------------------------------------

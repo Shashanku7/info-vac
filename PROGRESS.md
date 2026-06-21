@@ -42,8 +42,16 @@ a fully schema-valid 43-field output where every non-null field is gate-verified
 **File 1 — `backend/extractor.py`**
 - Function: `extract_fields(sources: list[Source], program: Program) -> ExtractedSchema`
 - Use `Instructor + Gemini-2.5-flash` with `Mode.MD_JSON`
-- Split the 43 fields into logical categories (earning, redemption, tiers, expiry, partners,
-  fees, customer-service). One Instructor call per category, not one monolithic call —
+- Split the 43 fields into the **8 categories from the problem statement** (infovac_ps.md line 54-62):
+  1. **Program Basics** — name, brand, industry, type, geography, membership count
+  2. **Partnerships** — partner names, partnership type (earn/burn/both), details
+  3. **Earn Mechanics** — base earn rate, bonus categories, non-transactional earn
+  4. **Digital Experience** — mobile app, app ratings, personalization, gamification
+  5. **Burn Mechanics** — redemption options, thresholds, point value, expiry policy
+  6. **Member Sentiment** — ratings, common praise, common complaints, sources checked
+  7. **Tier System** — tier names, qualification criteria, benefits, qualification period
+  8. **Competitive Position** — key differentiators, weaknesses, closest competitors
+- One Instructor call per category, not one monolithic call —
   avoids context overflow and makes partial failures recoverable.
 - Pass source content as **tool-result data** (inside the messages array as
   `role: tool` blocks), not as instruction text in the system prompt. This is the

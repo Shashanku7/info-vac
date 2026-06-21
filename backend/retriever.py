@@ -124,11 +124,20 @@ def _tavily_search(client: TavilyClient, query: str, source_type: str) -> list[_
     return candidates
 
 
-async def _check_robots(url: str, http: httpx.AsyncClient) -> bool:
-    """Return True if crawling `url` is allowed by its robots.txt.
+async def _check_robots(url: str, http: httpx.AsyncClient) -> str:
+    """Check robots.txt for `url`.
 
-    On any error (timeout, parse failure, non-200) we default to True —
-    we never block on ambiguity.
+    Returns:
+        'allowed'           — explicitly permitted or no robots.txt found (200+parse)
+        'blocked'           — robots.txt explicitly disallows '*' agent
+        'robots_unverified' — check failed (timeout, non-200, parse error).
+                              Decision #1 (OPEN_DECISIONS.md): allow scraping but
+                              mark the status so the gate/eval layer can filter.
+
+    Policy rationale: fail-closed (deny on error) risks killing legitimate sources
+    on transient timeouts; fail-open silently (return True) hides ambiguity.
+    'robots_unverified' is honest about what happened without blocking the source.
+    Caveat: hackathon-scope — revisit before production per SOLUTION.md legal flag.
     """
     try:
         parsed = urlparse(url)
@@ -137,10 +146,11 @@ async def _check_robots(url: str, http: httpx.AsyncClient) -> bool:
         if resp.status_code == 200:
             rp = RobotFileParser()
             rp.parse(resp.text.splitlines())
-            return rp.can_fetch("*", url)
+            return "allowed" if rp.can_fetch("*", url) else "blocked"
+        # Non-200 (404, 403, etc.) — no robots.txt or inaccessible
+        return "allowed"
     except Exception:
-        pass
-    return True
+        return "robots_unverified"
 
 
 def _firecrawl_fetch(app: FirecrawlApp, url: str) -> Optional[str]:
@@ -237,16 +247,18 @@ async def discover_sources(
 
     async with httpx.AsyncClient(headers={"User-Agent": "InfoVac/1.0 (+https://github.com/Hrishikesh-Prasad-R/info-vac)"}) as http:
         for candidate in unique_candidates:
-            # Robots check
-            allowed = await _check_robots(candidate.url, http)
-            if not allowed:
+            # Robots check — returns 'allowed' | 'blocked' | 'robots_unverified'
+            robots_status = await _check_robots(candidate.url, http)
+            if robots_status == "blocked":
                 log.info("robots_blocked", url=candidate.url)
                 continue
+            # 'robots_unverified' → proceed but stamp fetch_status below (Decision #1-D)
 
             # Firecrawl fetch (up to _MAX_FIRECRAWL_FETCHES)
             raw_content: str = candidate.tavily_snippet  # guaranteed fallback
             fetch_method = "tavily_snippet"
-            fetch_status = "success"
+            # Seed fetch_status from robots check so 'robots_unverified' propagates
+            fetch_status = "success" if robots_status == "allowed" else robots_status
 
             if firecrawl_count < _MAX_FIRECRAWL_FETCHES and firecrawl_key:
                 markdown = await loop.run_in_executor(
@@ -256,9 +268,13 @@ async def discover_sources(
                 if markdown and len(markdown.strip()) > 50:
                     raw_content = markdown
                     fetch_method = "firecrawl"
+                    # Keep robots_unverified if set; otherwise mark success
+                    if fetch_status == "success":
+                        fetch_status = "success"
                 else:
                     # Firecrawl returned nothing useful — keep snippet
-                    fetch_status = "failed"
+                    if fetch_status == "success":
+                        fetch_status = "failed"
                 # Polite delay between Firecrawl calls
                 await asyncio.sleep(_FIRECRAWL_DELAY)
 
