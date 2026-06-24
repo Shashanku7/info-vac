@@ -119,7 +119,7 @@ async def stream_program(program_id: uuid.UUID):
         conn: asyncpg.Connection | None = None
         queue: asyncio.Queue = asyncio.Queue()
 
-        def _on_notify(_, __, payload: str):
+        def _on_notify(conn, pid, channel, payload: str):
             queue.put_nowait(payload)
 
         try:

@@ -143,7 +143,7 @@ async def test_pipeline_emits_events_in_order(monkeypatch):
         yield mock_session
 
     monkeypatch.setattr("orchestrator.nodes.make_background_session", fake_bg_session)
-    monkeypatch.setattr("orchestrator.events.make_background_session", fake_bg_session)
+    monkeypatch.setattr("orchestrator.events.AsyncSessionLocal", fake_bg_session)
 
     from orchestrator.graph import run_pipeline
     await run_pipeline(
@@ -226,7 +226,7 @@ async def test_retry_on_timeout(monkeypatch):
         yield mock_session
 
     monkeypatch.setattr("orchestrator.nodes.make_background_session", fake_bg_session)
-    monkeypatch.setattr("orchestrator.events.make_background_session", fake_bg_session)
+    monkeypatch.setattr("orchestrator.events.AsyncSessionLocal", fake_bg_session)
 
     from orchestrator.graph import run_pipeline
     # Must not raise

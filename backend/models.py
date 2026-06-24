@@ -3,7 +3,7 @@ import hashlib
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, DateTime, Text, Boolean, ForeignKey, UniqueConstraint,
+    Column, String, DateTime, Text, Boolean, ForeignKey, UniqueConstraint, Numeric
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -83,13 +83,13 @@ class ExtractedField(Base):
     # Citation-verification gate
     claimed_snippet = Column(Text, nullable=True)
     gate_passed = Column(Boolean, nullable=True)
-    match_score = Column(String(10), nullable=True)  # stored as text "0.923"
+    match_score = Column(Numeric(4, 3), nullable=True)
 
     # Confidence sub-scores (Phase 3 only)
-    corroboration_score = Column(String(10), nullable=True)
-    authority_score = Column(String(10), nullable=True)
-    recency_score = Column(String(10), nullable=True)
-    confidence = Column(String(10), nullable=True)  # ONLY written by verifier.py
+    corroboration_score = Column(Numeric(3, 2), nullable=True)
+    authority_score = Column(Numeric(3, 2), nullable=True)
+    recency_score = Column(Numeric(3, 2), nullable=True)
+    confidence = Column(Numeric(3, 2), nullable=True)  # ONLY written by verifier.py
 
     source_id = Column(UUID(as_uuid=True), ForeignKey("sources.id"), nullable=True)
     access_date = Column(DateTime(timezone=True), nullable=True)

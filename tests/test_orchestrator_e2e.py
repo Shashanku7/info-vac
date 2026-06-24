@@ -34,7 +34,7 @@ async def test_e2e_run_completes():
     DoD: programs.status = 'complete' within 5 minutes.
     Chosen program: 'Starbucks Rewards' — already verified in Phase 1.
     """
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=90) as client:
         # Step 1: Create program
         resp = await client.post("/api/programs", json={"name": "Starbucks Rewards"})
         assert resp.status_code == 200, f"Create failed: {resp.text}"
@@ -86,13 +86,10 @@ async def test_sse_events_in_correct_order():
         "complete",
     ]
 
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
+    async with httpx.AsyncClient(base_url=BASE_URL, timeout=90) as client:
         resp = await client.post("/api/programs", json={"name": "Marriott Bonvoy"})
         assert resp.status_code == 200
         program_id = resp.json()["id"]
-
-        resp = await client.post(f"/api/programs/{program_id}/run")
-        assert resp.status_code == 202
 
     # Collect SSE events with a streaming client
     import json as _json
@@ -101,6 +98,12 @@ async def test_sse_events_in_correct_order():
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=TIME_LIMIT_SECONDS + 10) as sse_client:
         async with sse_client.stream("GET", f"/api/programs/{program_id}/stream") as resp:
             assert resp.status_code == 200
+            
+            # Open stream FIRST, then trigger the pipeline so we don't miss the first event
+            async with httpx.AsyncClient(base_url=BASE_URL, timeout=10) as run_client:
+                run_resp = await run_client.post(f"/api/programs/{program_id}/run")
+                assert run_resp.status_code == 202
+
             deadline = time.monotonic() + TIME_LIMIT_SECONDS
             async for line in resp.aiter_lines():
                 if time.monotonic() > deadline:

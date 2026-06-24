@@ -1,4 +1,4 @@
-# Secrets — never commit real keys
+# Secrets
 .env
 
 # Runtime logs
@@ -31,3 +31,6 @@ postgres_data/
 # OS
 .DS_Store
 Thumbs.db
+
+#temporary folder for internal testing
+temp/

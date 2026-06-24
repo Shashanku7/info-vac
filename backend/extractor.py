@@ -47,7 +47,7 @@ def _make_client() -> instructor.Instructor:
     if not api_key:
         raise EnvironmentError("GOOGLE_API_KEY (or GEMINI_API_KEY) is not set in .env")
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash-lite")
     return instructor.from_gemini(model, mode=instructor.Mode.MD_JSON)
 
 
@@ -217,8 +217,8 @@ def _build_source_message(program_name: str, sources: list) -> str:
     parts.append("=" * 60)
 
     for i, source in enumerate(sources, 1):
-        # Truncate very long sources to avoid context overflow (keep first 8K chars)
-        content = (source.raw_content or "")[:8000]
+        # Truncate very long sources to stay under 250k TPM free tier limit (keep first 4K chars)
+        content = (source.raw_content or "")[:4000]
         parts.append(f"\n--- SOURCE {i}: [{source.source_type.upper()}] {source.url} ---")
         parts.append(content)
         parts.append(f"--- END SOURCE {i} ---")

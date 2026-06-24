@@ -12,13 +12,14 @@ Retry policy (retrieve_node only):
 from __future__ import annotations
 
 import uuid
+import asyncio
 from datetime import datetime
 
 import structlog
 from sqlalchemy.exc import IntegrityError
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 
-from backend.db import make_background_session
+from backend.db import make_background_session, AsyncSessionLocal
 from backend.extractor import extract_fields, ExtractedSchema
 from backend.gate import gate_verify
 from backend.models import ExtractedField
@@ -108,9 +109,12 @@ async def extract_node(state: PipelineState) -> PipelineState:
     proxies = [_Proxy(d) for d in source_dicts]
 
     try:
-        schema: ExtractedSchema = extract_fields(
-            program_name=program_name,
-            sources=proxies,
+        loop = asyncio.get_running_loop()
+        schema: ExtractedSchema = await loop.run_in_executor(
+            None,
+            extract_fields,
+            program_name,
+            proxies,
         )
         schema_dict = schema.model_dump()
     except Exception as exc:
@@ -146,7 +150,7 @@ async def verify_node(state: PipelineState) -> PipelineState:
     field_rows = iter_fields(schema_dict)
     gate_passed_count = gate_rejected_count = 0
 
-    async with make_background_session() as session:
+    async with AsyncSessionLocal() as session:
         for cat_key, field_name, ev_dict in field_rows:
             value = ev_dict.get("value")
             evidence_quote = ev_dict.get("evidence_quote")
@@ -175,7 +179,7 @@ async def verify_node(state: PipelineState) -> PipelineState:
                 gate_rejected_count += 1
 
             # Compute confidence for non-null gate-passed fields
-            conf_str = corr_str = auth_str = rec_str = None
+            conf_num = corr_num = auth_num = rec_num = None
             if gate_result.passed and value and matched_source_id:
                 src = url_to_source.get(source_url or "", {})
                 fetched_str = src.get("fetched_at")
@@ -188,10 +192,10 @@ async def verify_node(state: PipelineState) -> PipelineState:
                                     value, fetched_at)],
                     total_sources,
                 )
-                conf_str = str(round(vr.confidence, 4))
-                corr_str = str(round(vr.corroboration_score, 4))
-                auth_str = str(round(vr.authority_score, 4))
-                rec_str  = str(round(vr.recency_score, 4))
+                conf_num = round(vr.confidence, 4)
+                corr_num = round(vr.corroboration_score, 4)
+                auth_num = round(vr.authority_score, 4)
+                rec_num  = round(vr.recency_score, 4)
 
             row = ExtractedField(
                 id=uuid.uuid4(),
@@ -202,11 +206,11 @@ async def verify_node(state: PipelineState) -> PipelineState:
                 is_null=(gate_result.matched_value is None),
                 claimed_snippet=evidence_quote,
                 gate_passed=gate_result.passed,
-                match_score=str(round(gate_result.match_score, 4)),
-                corroboration_score=corr_str,
-                authority_score=auth_str,
-                recency_score=rec_str,
-                confidence=conf_str,
+                match_score=round(gate_result.match_score, 4),
+                corroboration_score=corr_num,
+                authority_score=auth_num,
+                recency_score=rec_num,
+                confidence=conf_num,
                 source_id=(uuid.UUID(matched_source_id) if matched_source_id else None),
             )
             session.add(row)
