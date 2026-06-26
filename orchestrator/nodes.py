@@ -23,6 +23,7 @@ from backend.db import make_background_session, AsyncSessionLocal
 from backend.extractor import extract_fields, ExtractedSchema
 from backend.gate import gate_verify
 from backend.models import ExtractedField
+from backend.narrator import generate_narrative
 from backend.retriever import discover_sources
 from backend.verifier import compute_confidence, SourceEvidence
 
@@ -110,11 +111,8 @@ async def extract_node(state: PipelineState) -> PipelineState:
 
     try:
         loop = asyncio.get_running_loop()
-        schema: ExtractedSchema = await loop.run_in_executor(
-            None,
-            extract_fields,
-            program_name,
-            proxies,
+        schema = await loop.run_in_executor(
+            None, extract_fields, program_name, proxies
         )
         schema_dict = schema.model_dump()
     except Exception as exc:
@@ -229,14 +227,32 @@ async def verify_node(state: PipelineState) -> PipelineState:
 
 
 # ---------------------------------------------------------------------------
-# Node 4: Narrate (Phase 5 stub)
+# Node 4: Narrate (Phase 5)
 # ---------------------------------------------------------------------------
 
 async def narrate_node(state: PipelineState) -> PipelineState:
+    """Generate the analyst brief from gate-verified extracted_fields.
+
+    Non-blocking: if narrative generation fails, the pipeline still completes
+    successfully. The brief is stored in the narratives table.
+    """
     if state.get("error"):
         return state
+
     program_id = state["program_id"]
-    await emit_event(program_id, "complete", 1.0,
-                     "Pipeline complete (narrative: Phase 5)")
+
+    await emit_event(program_id, "narrating", 0.85,
+                     "Generating analyst competitive brief")
+    await set_status(program_id, "narrating")
+
+    async with AsyncSessionLocal() as session:
+        narrative = await generate_narrative(program_id, session)
+        if narrative is not None:
+            await session.commit()
+            detail = f"Narrative ready — {narrative.word_count} words"
+        else:
+            detail = "Pipeline complete (narrative generation failed — see logs)"
+
+    await emit_event(program_id, "complete", 1.0, detail)
     await set_status(program_id, "complete")
     return state

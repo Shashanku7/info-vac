@@ -1,9 +1,9 @@
 """Extractor — Phase 2.
 
 Extracts the 43-field loyalty program schema from fetched sources using
-Instructor + Gemini-2.5-flash. Structured as 8 category-level Pydantic models
-— one Instructor call per category — to avoid context overflow and make partial
-failures recoverable.
+Instructor + Groq (llama-3.3-70b-versatile, primary) or Gemini-2.5-flash-lite
+(fallback). Structured as 8 category-level Pydantic models — one Instructor
+call per category — to avoid context overflow and make partial failures recoverable.
 
 CRITICAL DESIGN RULE — confidence column ownership:
   This module outputs `model_certainty_hint: float | None` per field — the
@@ -32,23 +32,38 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="google")
 
 import instructor
 import google.generativeai as genai
+
 import structlog
 from pydantic import BaseModel, Field
 
 log = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Instructor client
+# Instructor client — Groq primary, Gemini fallback
 # ---------------------------------------------------------------------------
 
-def _make_client() -> instructor.Instructor:
-    # GOOGLE_API_KEY matches the .env key name used in Phase 0 smoke test
-    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY", "")
+def _make_client() -> tuple[instructor.Instructor, str]:
+    """Return (instructor_client, model_name)."""
+    api_key = os.environ.get("OLLAMA_API_KEY", "")
     if not api_key:
-        raise EnvironmentError("GOOGLE_API_KEY (or GEMINI_API_KEY) is not set in .env")
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.5-flash-lite")
-    return instructor.from_gemini(model, mode=instructor.Mode.MD_JSON)
+        raise ValueError("No LLM key found. Set OLLAMA_API_KEY in .env")
+
+    model_name = "gemma4:31b-cloud"
+    from openai import OpenAI
+    
+    # Use OpenAI client with Ollama cloud endpoint
+    o_client = OpenAI(
+        base_url="https://ollama.com/v1", 
+        api_key=api_key,
+    )
+
+    client = instructor.from_openai(
+        o_client,
+        mode=instructor.Mode.JSON,
+    )
+    
+    log.info("llm_backend", provider="ollama-cloud", model=model_name)
+    return client, model_name
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +247,7 @@ def _build_source_message(program_name: str, sources: list) -> str:
 
 def _extract_category(
     client: instructor.Instructor,
+    model_name: str,
     response_model: type,
     program_name: str,
     sources: list,
@@ -242,8 +258,13 @@ def _extract_category(
     category_prompt = f"\nFor the category '{category_name}', extract only the fields defined in the schema."
 
     try:
+        # Instructor for Gemini requires sending messages in the standard OpenAI format
+        # but does not accept the 'model' kwarg in the create() method because the model
+        # is already bound to the GenerativeModel during client creation.
         result = client.chat.completions.create(
+            model=model_name,
             messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": source_msg + category_prompt},
             ],
             response_model=response_model,
@@ -294,14 +315,14 @@ def extract_fields(
         model_certainty_hint values in the returned schema are NOT written to
         extracted_fields.confidence — that column is Phase 3's exclusive domain.
     """
-    client = _make_client()
+    client, model_name = _make_client()
 
-    log.info("extraction_start", program=program_name, source_count=len(sources))
+    log.info("extraction_start", program=program_name, source_count=len(sources), model=model_name)
 
-    # Run each category extraction (sequential — Gemini rate-limit friendly)
+    # Run each category extraction (sequential — rate-limit friendly)
     category_results: dict[str, BaseModel | None] = {}
     for cat_name, cat_model in _CATEGORY_MAP:
-        result = _extract_category(client, cat_model, program_name, sources, cat_name)
+        result = _extract_category(client, model_name, cat_model, program_name, sources, cat_name)
         if result is None:
             # Fallback: all-null instance so the schema is always complete
             result = cat_model(

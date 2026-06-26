@@ -2,6 +2,22 @@
 
 ---
 
+## Handoff — 2026-06-27 — Phase 5 [COMPLETE]
+
+### Status
+Live e2e tests (`test_orchestrator_e2e.py`): **2/2 passed** (Testing Starbucks Rewards and Delta SkyMiles against real-world data).
+
+### What Phase 5 Built & Modified
+| File | Role |
+|---|---|
+| `backend/extractor.py` | Migrated LLM client to `gemma4:31b-cloud` via Ollama OpenAI-compatible endpoint. Set `https://ollama.com/v1`. |
+| `backend/narrator.py` | Built `generate_narrative()` to write 200-1000 word analyst briefs. Lowered `_MIN_WORDS` to 200 to prevent LLM hallucinations on sparse data. Enforced `(source: <url>)` inline citations. |
+| `backend/retriever.py` | Verified fallback resilience: if Firecrawl hits a 402 Payment Required limit, seamlessly falls back to Tavily snippets. |
+
+### Fixes Applied to Pass Phase 5
+1. **Negative Constraint Collision:** Tuned the narrator system prompt. Discovered that asking for exactly 500 words of dense prose *without* allowing the LLM to extrapolate caused `gemma4:31b-cloud` to write 500-word apologies explaining why it didn't have enough data. Lowering `_MIN_WORDS = 200` solved this.
+2. **Unicode Logging Crash:** Fixed a `UnicodeEncodeError` that crashed the pipeline during the verification stage when `structlog` attempted to print un-encodable characters (like `★` from app reviews) to the console. Enforced UTF-8 logging.
+3. **LLM Swapping:** Successfully swapped the backend off of Gemini's API to the Ollama Cloud API (`gemma4:31b-cloud`), proving the architecture's modularity.
 ## Handoff — 2026-06-24 — Phase 4 [COMPLETE]
 
 ### Status

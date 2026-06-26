@@ -1,10 +1,11 @@
-"""FastAPI application — Phase 4: full pipeline + SSE.
+"""FastAPI application — Phase 5: full pipeline + SSE + narrative.
 
 Endpoints:
-  POST /api/programs             → create program row, return UUID
-  POST /api/programs/{id}/run   → start background pipeline
-  GET  /api/programs/{id}       → program status + metadata
-  GET  /api/programs/{id}/stream → SSE: live pipeline_events via pg LISTEN
+  POST /api/programs                    → create program row, return UUID
+  POST /api/programs/{id}/run           → start background pipeline
+  GET  /api/programs/{id}               → program status + metadata
+  GET  /api/programs/{id}/stream        → SSE: live pipeline_events via pg LISTEN
+  GET  /api/programs/{id}/narrative     → analyst brief (500-1000 words)
 """
 import asyncio
 import json
@@ -21,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db import get_db
-from backend.models import Program
+from backend.models import Program, Narrative
 from orchestrator.graph import run_pipeline
 
 app = FastAPI(
@@ -159,3 +160,26 @@ async def stream_program(program_id: uuid.UUID):
         },
     )
 
+
+@app.get("/api/programs/{program_id}/narrative")
+async def get_narrative(program_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Return the analyst brief for a completed program.
+
+    Returns 404 if the narrative has not been generated yet (pipeline
+    still running or narrative generation failed).
+    """
+    result = await db.execute(
+        select(Narrative).where(Narrative.program_id == program_id)
+    )
+    narrative = result.scalar_one_or_none()
+    if narrative is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Narrative not yet available. The pipeline may still be running.",
+        )
+    return {
+        "program_id": str(program_id),
+        "narrative": narrative.narrative_text,
+        "word_count": narrative.word_count,
+        "created_at": narrative.created_at.isoformat(),
+    }

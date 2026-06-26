@@ -55,7 +55,7 @@ def _fake_source_dict(url: str = "https://example.com/faq") -> dict:
 async def test_pipeline_emits_events_in_order(monkeypatch):
     """Graph runs end-to-end (mocked DB + APIs) and events arrive in the
     expected sequence: retrieving → retrieved → extracting → extracted →
-    verifying → verified → complete.
+    verifying → verified → narrating → complete.
     """
     emitted: list[str] = []
 
@@ -144,6 +144,13 @@ async def test_pipeline_emits_events_in_order(monkeypatch):
 
     monkeypatch.setattr("orchestrator.nodes.make_background_session", fake_bg_session)
     monkeypatch.setattr("orchestrator.events.AsyncSessionLocal", fake_bg_session)
+    # Phase 5: patch narrate_node's AsyncSessionLocal + generate_narrative
+    monkeypatch.setattr("orchestrator.nodes.AsyncSessionLocal", fake_bg_session)
+    fake_narrative = MagicMock(word_count=750)
+    monkeypatch.setattr(
+        "orchestrator.nodes.generate_narrative",
+        AsyncMock(return_value=fake_narrative),
+    )
 
     from orchestrator.graph import run_pipeline
     await run_pipeline(
@@ -156,7 +163,7 @@ async def test_pipeline_emits_events_in_order(monkeypatch):
         "retrieving", "retrieved",
         "extracting", "extracted",
         "verifying", "verified",
-        "complete",
+        "narrating", "complete",
     ]
     # Check each expected stage is present and in sequence
     filtered = [s for s in emitted if s in expected_order]
@@ -227,6 +234,12 @@ async def test_retry_on_timeout(monkeypatch):
 
     monkeypatch.setattr("orchestrator.nodes.make_background_session", fake_bg_session)
     monkeypatch.setattr("orchestrator.events.AsyncSessionLocal", fake_bg_session)
+    # Phase 5: patch narrate_node's session + generate_narrative
+    monkeypatch.setattr("orchestrator.nodes.AsyncSessionLocal", fake_bg_session)
+    monkeypatch.setattr(
+        "orchestrator.nodes.generate_narrative",
+        AsyncMock(return_value=MagicMock(word_count=600)),
+    )
 
     from orchestrator.graph import run_pipeline
     # Must not raise

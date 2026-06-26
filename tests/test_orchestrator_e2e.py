@@ -50,7 +50,7 @@ async def test_e2e_run_completes():
         final_status = None
 
         while time.monotonic() < deadline:
-            await asyncio.sleep(5)
+            await asyncio.sleep(3)
             resp = await client.get(f"/api/programs/{program_id}")
             assert resp.status_code == 200
             status = resp.json()["status"]
@@ -66,6 +66,15 @@ async def test_e2e_run_completes():
         assert final_status == "complete", (
             f"Pipeline ended with status='{final_status}' — check programs.error_message in DB"
         )
+
+        # Step 4: Verify the narrative was generated
+        resp = await client.get(f"/api/programs/{program_id}/narrative")
+        assert resp.status_code == 200, f"Failed to get narrative: {resp.text}"
+        data = resp.json()
+        assert "narrative" in data
+        assert data["word_count"] >= 500
+        print(f"  Narrative generated: {data['word_count']} words")
+
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +92,7 @@ async def test_sse_events_in_correct_order():
         "retrieving", "retrieved",
         "extracting", "extracted",
         "verifying", "verified",
-        "complete",
+        "narrating", "complete",
     ]
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=90) as client:

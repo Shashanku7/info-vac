@@ -1,9 +1,9 @@
-"""SQLAlchemy ORM models — Phase 1: Program + Source."""
+"""SQLAlchemy ORM models — Phase 1-5: Program, Source, ExtractedField, PipelineEvent, Narrative."""
 import hashlib
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, DateTime, Text, Boolean, ForeignKey, UniqueConstraint, Numeric
+    Column, String, DateTime, Text, Boolean, ForeignKey, UniqueConstraint, Numeric, Integer
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -118,3 +118,21 @@ class PipelineEvent(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
 
+
+class Narrative(Base):
+    """A generated analyst brief — rows in the narratives table.
+
+    Written by Phase 5 (narrator.py). Word count is enforced in Python code,
+    not trusted to the LLM.
+    """
+    __tablename__ = "narratives"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    program_id = Column(
+        UUID(as_uuid=True), ForeignKey("programs.id", ondelete="CASCADE"), nullable=False
+    )
+    narrative_text = Column(Text, nullable=False)
+    word_count = Column(Integer, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
