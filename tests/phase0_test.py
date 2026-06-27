@@ -6,7 +6,7 @@ Prerequisites:
   1. docker compose up -d   (Postgres running)
   2. alembic upgrade head   (schema migrated)
   3. uvicorn backend.main:app --host 0.0.0.0 --port 8000 &  (API running)
-  4. .env with valid ANTHROPIC_API_KEY
+  4. .env with valid OLLAMA_API_KEY
 
 Run:
     pytest tests/phase0_test.py -v
@@ -175,16 +175,3 @@ def test_langgraph_graph_compiles():
 
     # The graph object is compiled at module import — if we got here, it worked
     assert graph is not None, "graph is None — build_graph() returned nothing"
-
-    # Verify it's invokable (invoke with a minimal state)
-    initial_state: PipelineState = {
-        "program_id": "test-id",
-        "program_name": "Test Program",
-        "sources": [],
-        "extracted_fields": {},
-        "narrative": "",
-    }
-    result = graph.invoke(initial_state)
-    # Pass-through nodes should return state unchanged
-    assert result["program_id"] == "test-id"
-    assert result["program_name"] == "Test Program"

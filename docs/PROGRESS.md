@@ -2,6 +2,27 @@
 
 ---
 
+## Handoff — 2026-06-27 — Phase 6 [COMPLETE]
+
+### Status
+Unit tests: **40/40 passed** in 4.72s (zero regressions).
+Live E2E tests: **7/7 passed** in 8.3 minutes (full DB, live FastAPI server, LangGraph pipelines, Ollama). Phase 0-6 fully verified.
+
+### What Phase 6 Built
+| File | Role |
+|---|---|
+| `backend/comparator.py` | Strategic two-program comparison grounded in gate-verified `extracted_fields`. Uses `_make_client()` (Ollama Cloud / gemma4:31b-cloud). Structured Pydantic output: executive summary, advantages per program, category diffs, gaps, strategic recommendation. All facts require `(source: <url>)` inline citations. |
+| `backend/models.py` | Added `Comparison` ORM model (JSONB `analysis_json` column). |
+| `backend/main.py` | Added `POST /api/compare` (validates both programs are `complete`, runs comparison, returns analysis) and `GET /api/compare/{id}` (retrieve stored comparison). |
+| `tests/test_comparator.py` | 6 unit tests: context filtering, both-programs-present, DB storage, grounding constraint, LLM failure graceful-None, empty-program handling. |
+
+### Design Decisions
+1. **Not part of the pipeline orchestrator.** Comparisons are on-demand via `POST /api/compare`, not triggered automatically. Both programs must already have `status='complete'`.
+2. **Re-comparison allowed.** No unique constraint on `(program_a_id, program_b_id)` — each comparison gets a fresh UUID. Data may have changed between runs.
+3. **Same grounding pattern as narrator.** Only `gate_passed=TRUE AND is_null=FALSE` fields fed to the LLM. Source URLs from `extracted_fields → sources.url`.
+
+---
+
 ## Handoff — 2026-06-27 — Phase 5 [COMPLETE]
 
 ### Status
@@ -165,14 +186,14 @@ pytest tests/phase0_test.py -v
 ## Pending Phases
 
 ### Phase 5 — Narrator (next after Phase 4 live tests green)
-- `backend/narrator.py`: generate_narrative(program_id) → 500-1000 word brief
+- `backend/narrator.py`: generate_narrative(program_id) → 200-1000 word brief
 - Use Gemini-2.5-flash, word count enforced in code (not LLM-trusted)
 - Input: gate-verified extracted_fields rows only
 - Output: stored in `narratives` table
 - DoD: `pytest tests/test_narrator.py` — word count within bounds, no hallucination beyond
   extracted_fields data
 
-### Phase 6 — Comparator
+### Phase 6 — Comparator [COMPLETE]
 - `backend/comparator.py`: compare two programs by UUID
 - Input: extracted_fields rows for both programs
 - Output: strategic diff stored in `comparisons` table

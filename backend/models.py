@@ -1,11 +1,11 @@
-"""SQLAlchemy ORM models — Phase 1-5: Program, Source, ExtractedField, PipelineEvent, Narrative."""
+"""SQLAlchemy ORM models — Phase 1-6: Program, Source, ExtractedField, PipelineEvent, Narrative, Comparison."""
 import hashlib
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, DateTime, Text, Boolean, ForeignKey, UniqueConstraint, Numeric, Integer
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -133,6 +133,27 @@ class Narrative(Base):
     )
     narrative_text = Column(Text, nullable=False)
     word_count = Column(Integer, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Comparison(Base):
+    """A strategic comparison between two loyalty programs.
+
+    Written by Phase 6 (comparator.py). The analysis_json column stores
+    the full structured diff output as JSONB.
+    """
+    __tablename__ = "comparisons"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    program_a_id = Column(
+        UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False
+    )
+    program_b_id = Column(
+        UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False
+    )
+    analysis_json = Column(JSONB, nullable=False)
     created_at = Column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )

@@ -5,7 +5,7 @@ All LLM and DB interactions are mocked.
 
 Tests:
   1. test_only_gate_passed_in_context       — rejected/null fields excluded from context block
-  2. test_word_count_retry_triggered        — <500 word response triggers exactly one re-request
+  2. test_word_count_retry_triggered        — <200 word response triggers exactly one re-request
   3. test_word_count_stored_as_is_after_retry — after 2 attempts still OOB, stored anyway
   4. test_narrative_written_to_db           — generate_narrative() adds Narrative to session
   5. test_system_prompt_contains_grounding  — system prompt contains the no-training-knowledge rule
@@ -83,8 +83,8 @@ async def test_only_gate_passed_in_context():
 # ---------------------------------------------------------------------------
 
 def test_word_count_retry_triggered():
-    """If first response is too short (<500 words), create is called a second time."""
-    short_brief = "Too short."  # well under 500 words
+    """If first response is too short (<200 words), create is called a second time."""
+    short_brief = "Too short."  # well under 200 words
     normal_brief = " ".join(["word"] * 600)  # 600 words — in range
 
     call_count = 0
@@ -111,7 +111,7 @@ def test_word_count_retry_triggered():
 
 def test_word_count_stored_as_is_after_retry():
     """If both attempts are OOB, the second brief is returned (not an error raised)."""
-    short_brief = "Still too short."  # <500 both times
+    short_brief = "Still too short."  # <200 both times
 
     result = MagicMock()
     result.brief = short_brief

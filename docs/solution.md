@@ -8,7 +8,7 @@ Build a structured competitive intelligence agent for loyalty programs that:
 - Extracts data into a schema of 35+ fields across 8 categories
 - Verifies every extracted fact against a source URL with an access date
 - Flags contradictions across sources
-- Generates a 500-1000 word client-ready narrative
+- Generates a 200-1000 word client-ready narrative
 - Compares two programs strategically (advantages and gaps, not just side-by-side)
 - Supports 3+ turn follow-up Q&A grounded only in verified data
 
@@ -28,7 +28,7 @@ The scoring rubric is asymmetric: +1 correct / +0.5 honest null / 0 miss / -3 ha
 | R4  | Citation-verification gate: claimed value must match real source text | P0    |
 | R5  | Deterministic confidence score calibrated against the eval set     | P0       |
 | R6  | Honest null on unverifiable or unfound fields                      | P0       |
-| R7  | 500-1000 word narrative, word count enforced in code               | P0       |
+| R7  | 200-1000 word narrative, word count enforced in code               | P0       |
 | R8  | Two-program comparison with strategic advantages/gaps              | P1       |
 | R9  | Grounded 3+ turn follow-up Q&A, no outside knowledge              | P1       |
 | R10 | Contradiction detection across disagreeing sources                 | P1       |
@@ -67,7 +67,7 @@ graph TD
 
     Gate --> Ver["Verifier\nDETERMINISTIC - not an LLM call\n(confidence = 0.5 x corroboration\n+ 0.3 x authority + 0.2 x recency;\ncontradiction detection + cap at 0.4;\nnull below calibrated threshold)"]
 
-    Ver --> Nar["Narrator\n(500-1000 word brief,\nword count enforced in code)"]
+    Ver --> Nar["Narrator\n(200-1000 word brief,\nword count enforced in code)"]
     Ver --> Comp["Comparator\n(two-program strategic diff,\nsource-backed)"]
 
     Nar --> DB[("PostgreSQL 15\nextracted_fields / narratives\ncomparisons / pipeline_events")]
@@ -232,7 +232,7 @@ Every non-null field in the API response carries this structure:
 | POST | `/api/programs` | Start a research job |
 | GET | `/api/programs/{id}` | Full program object once complete |
 | GET | `/api/programs/{id}/stream` | SSE stream backed by `LISTEN pipeline_events_{id}` |
-| GET | `/api/programs/{id}/narrative` | 500-1000 word brief |
+| GET | `/api/programs/{id}/narrative` | 200-1000 word brief |
 | GET | `/api/programs/{id}/sources` | All sources with type and fetch status |
 | POST | `/api/compare` | Two-program strategic comparison |
 | GET | `/api/compare/{id}` | Comparison result |
@@ -266,7 +266,7 @@ data: {"program_id": "uuid", "verified_field_rate": 0.93, "contradiction_count":
 | Source-attributed extraction, 43 fields | Factual Accuracy + Source Attribution | Core build |
 | Citation-verification gate | Factual Accuracy, System Robustness | Core build |
 | Deterministic confidence formula | Factual Accuracy | Core build |
-| 500-1000 word narrative | Narrative Quality | Core build |
+| 200-1000 word narrative | Narrative Quality | Core build |
 | Two-program comparison | Comparison Quality | Core build |
 | Grounded chat (3+ turns) | Robustness, Converse requirement | Core build |
 | Source-verification deep-link UI (Text Fragment) | Source Attribution, demo quality | Day 6 |

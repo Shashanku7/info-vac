@@ -1,11 +1,13 @@
-"""FastAPI application — Phase 5: full pipeline + SSE + narrative.
+"""FastAPI application — Phase 6: full pipeline + SSE + narrative + comparator.
 
 Endpoints:
   POST /api/programs                    → create program row, return UUID
   POST /api/programs/{id}/run           → start background pipeline
   GET  /api/programs/{id}               → program status + metadata
   GET  /api/programs/{id}/stream        → SSE: live pipeline_events via pg LISTEN
-  GET  /api/programs/{id}/narrative     → analyst brief (500-1000 words)
+  GET  /api/programs/{id}/narrative     → analyst brief (200-1000 words)
+  POST /api/compare                     → two-program strategic comparison
+  GET  /api/compare/{id}                → retrieve comparison result
 """
 import asyncio
 import json
@@ -22,12 +24,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db import get_db
-from backend.models import Program, Narrative
+from backend.models import Program, Narrative, Comparison
+from backend.comparator import compare_programs
 from orchestrator.graph import run_pipeline
 
 app = FastAPI(
     title="InfoVac API",
-    version="0.2.0",
+    version="0.3.0",
     description="Autonomous Competitive Intelligence Agent",
 )
 
@@ -59,6 +62,11 @@ class ProgramResponse(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class CompareRequest(BaseModel):
+    program_a_id: uuid.UUID
+    program_b_id: uuid.UUID
 
 
 # ---------------------------------------------------------------------------
@@ -182,4 +190,65 @@ async def get_narrative(program_id: uuid.UUID, db: AsyncSession = Depends(get_db
         "narrative": narrative.narrative_text,
         "word_count": narrative.word_count,
         "created_at": narrative.created_at.isoformat(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Comparator endpoints (Phase 6)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/compare", status_code=200)
+async def create_comparison(body: CompareRequest, db: AsyncSession = Depends(get_db)):
+    """Run a strategic comparison between two completed programs.
+
+    Both programs must exist and be in 'complete' status.
+    Returns the full comparison analysis.
+    """
+    # Validate both programs exist and are complete
+    program_a = await db.get(Program, body.program_a_id)
+    if program_a is None:
+        raise HTTPException(status_code=404, detail=f"Program A not found: {body.program_a_id}")
+    if program_a.status != "complete":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Program A is in status '{program_a.status}', must be 'complete'",
+        )
+
+    program_b = await db.get(Program, body.program_b_id)
+    if program_b is None:
+        raise HTTPException(status_code=404, detail=f"Program B not found: {body.program_b_id}")
+    if program_b.status != "complete":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Program B is in status '{program_b.status}', must be 'complete'",
+        )
+
+    comparison = await compare_programs(
+        str(body.program_a_id), str(body.program_b_id), db,
+    )
+    if comparison is None:
+        raise HTTPException(status_code=500, detail="Comparison generation failed — see server logs.")
+
+    await db.commit()
+    return {
+        "comparison_id": str(comparison.id),
+        "program_a_id": str(comparison.program_a_id),
+        "program_b_id": str(comparison.program_b_id),
+        "analysis": comparison.analysis_json,
+        "created_at": comparison.created_at.isoformat(),
+    }
+
+
+@app.get("/api/compare/{comparison_id}")
+async def get_comparison(comparison_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Retrieve a previously generated comparison by its UUID."""
+    comparison = await db.get(Comparison, comparison_id)
+    if comparison is None:
+        raise HTTPException(status_code=404, detail="Comparison not found.")
+    return {
+        "comparison_id": str(comparison.id),
+        "program_a_id": str(comparison.program_a_id),
+        "program_b_id": str(comparison.program_b_id),
+        "analysis": comparison.analysis_json,
+        "created_at": comparison.created_at.isoformat(),
     }

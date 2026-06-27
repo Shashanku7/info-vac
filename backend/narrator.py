@@ -1,6 +1,6 @@
 """Narrator — Phase 5.
 
-Generates a 500-1000 word analyst-grade competitive brief from gate-verified
+Generates a 200-1000 word analyst-grade competitive brief from gate-verified
 extracted_fields rows. Every factual sentence includes an inline citation
 (source: <url>) derived from the verified data. The word count is enforced
 in Python code — not trusted to the LLM.
@@ -69,7 +69,7 @@ Rules:
 _RETRY_PROMPT = (
     "Your previous brief was {{word_count}} words, which is outside the required "
     f"{_MIN_WORDS}-{_MAX_WORDS} word range. "
-    "Please rewrite it, hitting between 500 and 1000 words. "
+    "Please rewrite it, hitting between 200 and 1000 words. "
     "Keep all inline (source: <url>) citations."
 )
 

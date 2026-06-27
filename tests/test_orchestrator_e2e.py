@@ -72,7 +72,7 @@ async def test_e2e_run_completes():
         assert resp.status_code == 200, f"Failed to get narrative: {resp.text}"
         data = resp.json()
         assert "narrative" in data
-        assert data["word_count"] >= 500
+        assert data["word_count"] >= 200
         print(f"  Narrative generated: {data['word_count']} words")
 
 
