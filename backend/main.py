@@ -252,3 +252,52 @@ async def get_comparison(comparison_id: uuid.UUID, db: AsyncSession = Depends(ge
         "analysis": comparison.analysis_json,
         "created_at": comparison.created_at.isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Chat / RAG
+# ---------------------------------------------------------------------------
+
+from backend.chat import ChatRequest, handle_chat_message
+from backend.models import Conversation, Message
+from sqlalchemy import select
+
+@app.post("/api/programs/{program_id}/chat")
+async def chat_with_program(
+    program_id: str,
+    body: ChatRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Ask a question about a program using RAG."""
+    return await handle_chat_message(program_id, body, db)
+
+
+@app.get("/api/programs/{program_id}/chat")
+async def get_chat_history(
+    program_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve chat history for a program."""
+    conv_res = await db.execute(
+        select(Conversation).where(Conversation.program_id == uuid.UUID(program_id))
+    )
+    conv = conv_res.scalars().first()
+    if not conv:
+        return {"messages": []}
+        
+    msg_res = await db.execute(
+        select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at.asc())
+    )
+    messages = msg_res.scalars().all()
+    
+    return {
+        "conversation_id": str(conv.id),
+        "messages": [
+            {
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat()
+            }
+            for m in messages
+        ]
+    }

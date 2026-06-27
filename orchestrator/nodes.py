@@ -85,6 +85,77 @@ async def retrieve_node(state: PipelineState) -> PipelineState:
 
 
 # ---------------------------------------------------------------------------
+# Node 1.5: Embed (Phase 7 RAG)
+# ---------------------------------------------------------------------------
+
+async def embed_node(state: PipelineState) -> PipelineState:
+    """Chunk source text and embed into Qdrant for RAG Chat."""
+    if state.get("error"):
+        return state
+
+    program_id = state["program_id"]
+    source_dicts = state.get("source_dicts", [])
+
+    await emit_event(program_id, "embedding", 0.28, "Chunking and embedding raw source text for Chat Q&A")
+    await set_status(program_id, "embedding")
+
+    try:
+        from backend.qdrant_client import get_qdrant_client, ensure_collection
+        from backend.embeddings import chunk_text, embed_texts
+        from qdrant_client.http import models
+        import asyncio, uuid
+        
+        client = get_qdrant_client()
+        ensure_collection(client)
+        
+        points = []
+        for src in source_dicts:
+            raw_text = src.get("raw_content")
+            if not raw_text:
+                continue
+                
+            chunks = chunk_text(raw_text)
+            if not chunks:
+                continue
+                
+            # Run heavy embeddings in a thread pool so we don't block asyncio event loop
+            loop = asyncio.get_running_loop()
+            vectors = await loop.run_in_executor(None, embed_texts, chunks)
+            
+            for chunk_str, vector in zip(chunks, vectors):
+                points.append(
+                    models.PointStruct(
+                        id=uuid.uuid4().hex,
+                        vector=vector,
+                        payload={
+                            "program_id": program_id,
+                            "source_id": src["id"],
+                            "source_url": src["url"],
+                            "text": chunk_str
+                        }
+                    )
+                )
+                
+        if points:
+            # Upsert in batches
+            batch_size = 100
+            for i in range(0, len(points), batch_size):
+                # Qdrant client operations are sync in our wrapper
+                await asyncio.get_running_loop().run_in_executor(
+                    None, 
+                    lambda p=points[i:i+batch_size]: client.upsert(collection_name="sources", points=p)
+                )
+            
+    except Exception as exc:
+        err = str(exc)[:400]
+        log.error("embed_failed", program_id=program_id, error=err)
+        # Do not fail the whole pipeline just because chat embeddings failed
+        await emit_event(program_id, "embed_warning", 0.29, f"Vector embedding failed (chat may degrade): {err}")
+        
+    return state
+
+
+# ---------------------------------------------------------------------------
 # Node 2: Extract
 # ---------------------------------------------------------------------------
 

@@ -2,6 +2,22 @@
 
 ---
 
+## Handoff — 2026-06-27 — Phase 7 [COMPLETE]
+
+### Status
+Live Chat Script verified: Successfully grounded the `gemma4:31b` LLM using Qdrant semantic search. Accurately provided a null-response when exact benefits were missing, preventing hallucination.
+
+### What Phase 7 Built & Modified
+| File | Role |
+|---|---|
+| `backend/embeddings.py` | Migrated to an offline, memory-safe, 4-bit quantized embedding model (`AMAImedia/Qwen3-Embedding-8B-NOESIS-AWQ-INT4`). Avoids laptop OOM crashes while processing chunks. |
+| `backend/qdrant_client.py` | Transitioned to enterprise Qdrant Cloud. Enforced mandatory `KEYWORD` payload index on `program_id` to allow strict filtering. Updated `client.search` to `client.query_points`. |
+| `backend/chat.py` | RAG endpoint. Vectorizes user questions, queries Qdrant for semantic chunks matching `program_id`, merges extracted facts from Postgres, and prompts the LLM to answer strictly from provided context. |
+| `backend/retriever.py` | Added 5 targeted Tavily search queries (`homepage`, `benefits`, `partners`, `mechanics`, `competitors`) to ensure the scraper discovers actual program details rather than just legal terms and app reviews. |
+| `setup.bat` & `.env.example` | Fully automated 5-step Windows onboarding script to install dependencies, boot Docker, run migrations, and prevent Docker-offline crashes. |
+
+---
+
 ## Handoff — 2026-06-27 — Phase 6 [COMPLETE]
 
 ### Status

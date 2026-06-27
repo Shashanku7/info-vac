@@ -53,3 +53,10 @@ mypy
 # Formatting / linting (optional)
 ruff
 black
+
+# RAG (Phase 7)
+qdrant-client
+sentence-transformers
+langchain-text-splitters
+gptqmodel
+torchvision

@@ -51,6 +51,11 @@ _QUERIES: dict[str, str] = {
     "press": '"{name}" loyalty program press release announcement',
     "news": '"{name}" loyalty program news 2024 2025',
     "forum": '"{name}" loyalty rewards reddit community discussion',
+    "homepage": '"{name}" official loyalty program homepage',
+    "benefits": '"{name}" elite status levels tiers and benefits',
+    "partners": '"{name}" credit card airline hotel transfer partners',
+    "mechanics": '"{name}" how to earn and redeem points award chart',
+    "competitors": '"{name}" versus competitors review comparison',
 }
 
 # URL patterns that override the query-of-origin classification

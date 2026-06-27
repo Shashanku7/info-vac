@@ -9,7 +9,7 @@ import structlog
 from langgraph.graph import StateGraph, END
 
 from orchestrator.events import emit_event, set_status
-from orchestrator.nodes import retrieve_node, extract_node, verify_node, narrate_node
+from orchestrator.nodes import retrieve_node, embed_node, extract_node, verify_node, narrate_node
 from orchestrator.state import PipelineState
 
 log = structlog.get_logger(__name__)
@@ -19,11 +19,13 @@ def build_graph():
     """Compile the LangGraph pipeline graph."""
     builder = StateGraph(PipelineState)
     builder.add_node("retrieve", retrieve_node)
+    builder.add_node("embed", embed_node)
     builder.add_node("extract", extract_node)
     builder.add_node("verify", verify_node)
     builder.add_node("narrate", narrate_node)
     builder.set_entry_point("retrieve")
-    builder.add_edge("retrieve", "extract")
+    builder.add_edge("retrieve", "embed")
+    builder.add_edge("embed", "extract")
     builder.add_edge("extract", "verify")
     builder.add_edge("verify", "narrate")
     builder.add_edge("narrate", END)
