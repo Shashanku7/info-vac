@@ -132,8 +132,12 @@ async def _build_context(
 # Word count helper
 # ---------------------------------------------------------------------------
 
+import re
+
 def _count_words(text: str) -> int:
-    return len(text.split())
+    # Strip out the (source: https://...) citations before counting
+    text_without_citations = re.sub(r'\(source:\s*http[^\)]+\)', '', text)
+    return len(text_without_citations.split())
 
 
 # ---------------------------------------------------------------------------
