@@ -130,3 +130,37 @@ async def test_llm_judge_gate_invoked_on_borderline_match():
         # Verify gate results were overridden to pass because judge returned True
         assert mock_gate_res.passed is True
         assert mock_gate_res.matched_value == "TRUE"
+
+def test_key_rotation_fallback():
+    """Verify that embed_texts rotates keys if the first one throws an exception."""
+    from backend.embeddings import embed_texts
+    
+    mock_env = {
+        "GEMINI_API_KEYS": "key1,key2,key3"
+    }
+    
+    calls = []
+    def mock_embed_content(model, content):
+        # Fail on the first key, succeed on the second key
+        if genai_api_key == "key1":
+            calls.append("key1")
+            raise Exception("Rate limit reached on key1")
+        else:
+            calls.append("key2")
+            return {"embedding": [[0.5]*3072]}
+
+    # Track currently configured key
+    genai_api_key = None
+    def mock_configure(api_key):
+        nonlocal genai_api_key
+        genai_api_key = api_key
+
+    with patch("backend.embeddings.os.environ", mock_env), \
+         patch("backend.embeddings.genai.configure", side_effect=mock_configure), \
+         patch("backend.embeddings.genai.embed_content", side_effect=mock_embed_content):
+             
+        res = embed_texts(["some text"])
+        
+        # Assert both configure and embed_content were called with rotated keys
+        assert calls == ["key1", "key2"]
+        assert res == [[0.5]*3072]

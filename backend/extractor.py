@@ -55,20 +55,21 @@ log = structlog.get_logger(__name__)
 def _get_available_backends() -> list[dict[str, Any]]:
     """Return a list of available LLM configurations based on environment keys."""
     backends = []
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    from backend.embeddings import _get_gemini_keys
+    gemini_keys = _get_gemini_keys()
     ollama_key = os.environ.get("OLLAMA_API_KEY", "")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
 
-    if gemini_key:
+    for idx, g_key in enumerate(gemini_keys):
         from openai import OpenAI
         backends.append({
-            "provider": "gemini",
+            "provider": f"gemini-key-{idx+1}",
             "model": "gemini-1.5-flash",
-            "client": lambda: instructor.from_openai(
+            "client": lambda k=g_key: instructor.from_openai(
                 OpenAI(
                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                    api_key=gemini_key,
+                    api_key=k,
                 ),
                 mode=instructor.Mode.JSON,
             )

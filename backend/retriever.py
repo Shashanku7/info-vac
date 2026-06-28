@@ -153,32 +153,42 @@ def _classify_source(url: str, title: str, snippet: str, default: str) -> str:
     return default
 
 
-def _tavily_search(client: TavilyClient, query: str, source_type: str) -> list[_Candidate]:
-    """Run one Tavily query, return classified candidates."""
-    candidates: list[_Candidate] = []
-    try:
-        response = client.search(
-            query,
-            max_results=_MAX_RESULTS_PER_QUERY,
-            search_depth="advanced",
-        )
-        for r in response.get("results", []):
-            url = r.get("url", "").strip()
-            if not url:
-                continue
-            title = r.get("title", "") or ""
-            snippet = r.get("content", "") or ""
-            # Use enhanced 4-level classifier (URL domain → path → title → snippet)
-            classified = _classify_source(url, title, snippet, source_type)
-            candidates.append(_Candidate(
-                url=url,
-                source_type=classified,
-                title=title,
-                tavily_snippet=snippet,
-            ))
-    except Exception as exc:
-        log.warning("tavily_search_failed", query=query[:80], error=str(exc))
-    return candidates
+def _tavily_search(keys: list[str], query: str, source_type: str) -> list[_Candidate]:
+    """Run one Tavily query, rotating keys if rate-limited or failed."""
+    from tavily import TavilyClient
+    if not keys:
+        log.warning("no_tavily_keys_configured")
+        return []
+        
+    last_exc = None
+    for k in keys:
+        try:
+            client = TavilyClient(api_key=k)
+            response = client.search(
+                query,
+                max_results=_MAX_RESULTS_PER_QUERY,
+                search_depth="advanced",
+            )
+            candidates: list[_Candidate] = []
+            for r in response.get("results", []):
+                url = r.get("url", "").strip()
+                if not url:
+                    continue
+                title = r.get("title", "") or ""
+                snippet = r.get("content", "") or ""
+                classified = _classify_source(url, title, snippet, source_type)
+                candidates.append(_Candidate(
+                    url=url,
+                    source_type=classified,
+                    title=title,
+                    tavily_snippet=snippet,
+                ))
+            return candidates
+        except Exception as exc:
+            log.warning("tavily_key_failed_rotating", key_prefix=k[:6], error=str(exc)[:200])
+            last_exc = exc
+    log.error("all_tavily_keys_failed", query=query[:80], error=str(last_exc))
+    return []
 
 
 async def _check_robots(url: str, http: httpx.AsyncClient) -> str:
@@ -210,35 +220,35 @@ async def _check_robots(url: str, http: httpx.AsyncClient) -> str:
         return "robots_unverified"
 
 
-def _firecrawl_fetch(app: FirecrawlApp, url: str) -> tuple[Optional[str], Optional[str]]:
-    """Scrape a URL with Firecrawl. Returns (markdown, html) in a single API call.
+def _firecrawl_fetch(keys: list[str], url: str) -> tuple[Optional[str], Optional[str]]:
+    """Scrape a URL with Firecrawl, rotating keys if rate-limited or failed."""
+    from firecrawl import FirecrawlApp
+    if not keys:
+        return None, None
+        
+    last_exc = None
+    for k in keys:
+        try:
+            app = FirecrawlApp(api_key=k)
+            result = app.scrape_url(url, formats=["markdown", "html"])
+            markdown: Optional[str] = None
+            html: Optional[str] = None
 
-    HTML is used downstream by the extractor for TierSystem table extraction,
-    where markdown destroys column structure. Both formats are requested in one
-    call — no extra Firecrawl credit used.
+            if hasattr(result, "markdown"):
+                markdown = result.markdown or None
+            if hasattr(result, "html"):
+                html = result.html or None
 
-    Returns:
-        (markdown, html) — either/both may be None on failure or missing format.
-    """
-    try:
-        result = app.scrape_url(url, formats=["markdown", "html"])
-        markdown: Optional[str] = None
-        html: Optional[str] = None
+            if isinstance(result, dict):
+                markdown = result.get("markdown") or result.get("content") or None
+                html = result.get("html") or None
 
-        # firecrawl-py >= 1.0 returns an object with attributes
-        if hasattr(result, "markdown"):
-            markdown = result.markdown or None
-        if hasattr(result, "html"):
-            html = result.html or None
-
-        # Older versions return a dict
-        if isinstance(result, dict):
-            markdown = result.get("markdown") or result.get("content") or None
-            html = result.get("html") or None
-
-        return markdown, html
-    except Exception as exc:
-        log.warning("firecrawl_failed", url=url, error=str(exc)[:200])
+            return markdown, html
+        except Exception as exc:
+            log.warning("firecrawl_key_failed_rotating", key_prefix=k[:6], error=str(exc)[:200])
+            last_exc = exc
+            
+    log.error("all_firecrawl_keys_failed", url=url, error=str(last_exc))
     return None, None
 
 
@@ -262,22 +272,26 @@ async def discover_sources(
         List of Source ORM objects that were inserted (or already existed).
         Returns [] gracefully if no sources are found.
     """
-    tavily_key = os.getenv("TAVILY_API_KEY", "")
-    firecrawl_key = os.getenv("FIRECRAWL_API_KEY", "")
+    # Load rotated key lists
+    tavily_keys_str = os.getenv("TAVILY_API_KEYS", "")
+    if tavily_keys_str:
+        tavily_keys = [k.strip() for k in tavily_keys_str.split(",") if k.strip()]
+    else:
+        tavily_keys = [os.getenv("TAVILY_API_KEY", "")] if os.getenv("TAVILY_API_KEY") else []
 
-    if not tavily_key:
-        raise EnvironmentError("TAVILY_API_KEY is not set in .env")
-    if not firecrawl_key:
-        raise EnvironmentError("FIRECRAWL_API_KEY is not set in .env")
+    firecrawl_keys_str = os.getenv("FIRECRAWL_API_KEYS", "")
+    if firecrawl_keys_str:
+        firecrawl_keys = [k.strip() for k in firecrawl_keys_str.split(",") if k.strip()]
+    else:
+        firecrawl_keys = [os.getenv("FIRECRAWL_API_KEY", "")] if os.getenv("FIRERAWL_API_KEY") or os.getenv("FIRECRAWL_API_KEY") else []
 
-    tavily = TavilyClient(api_key=tavily_key)
-    firecrawl = FirecrawlApp(api_key=firecrawl_key)
+    if not tavily_keys:
+        raise EnvironmentError("No TAVILY_API_KEY found.")
 
     log.info("retriever_start", program=program_name)
 
     # ------------------------------------------------------------------
     # Step 1: Tavily discovery — run all queries in a thread pool
-    # (TavilyClient is synchronous)
     # ------------------------------------------------------------------
     all_candidates: list[_Candidate] = []
 
@@ -286,7 +300,7 @@ async def discover_sources(
     for source_type, query_template in _QUERIES.items():
         query = query_template.format(name=program_name)
         tasks.append(
-            loop.run_in_executor(None, _tavily_search, tavily, query, source_type)
+            loop.run_in_executor(None, _tavily_search, tavily_keys, query, source_type)
         )
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -336,9 +350,9 @@ async def discover_sources(
 
             raw_html: Optional[str] = None
 
-            if firecrawl_count < _MAX_FIRECRAWL_FETCHES and firecrawl_key:
+            if firecrawl_count < _MAX_FIRECRAWL_FETCHES and firecrawl_keys:
                 markdown, html = await loop.run_in_executor(
-                    None, _firecrawl_fetch, firecrawl, candidate.url
+                    None, _firecrawl_fetch, firecrawl_keys, candidate.url
                 )
                 firecrawl_count += 1
                 if markdown and len(markdown.strip()) > 50:
