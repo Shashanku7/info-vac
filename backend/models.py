@@ -79,7 +79,7 @@ class ExtractedField(Base):
     )
     category = Column(String(50), nullable=False)
     field_name = Column(String(100), nullable=False)
-    field_value = Column(Text, nullable=True)   # stored as text (JSON-serialisable values)
+    field_value = Column(JSONB, nullable=True)   # stored as jsonb (JSON-serialisable values)
     is_null = Column(Boolean, nullable=False, default=False)
 
     # Citation-verification gate

@@ -39,6 +39,47 @@ from backend.models import Source
 load_dotenv()
 log = structlog.get_logger(__name__)
 
+
+def clean_utf8_mojibake(text: str) -> str:
+    """Repair common UTF-8 double-decoding (mojibake) artifacts in crawled text."""
+    if not text:
+        return text
+
+    # Try cp1252 to utf-8 roundtrip if possible
+    try:
+        encoded = text.encode("cp1252")
+        decoded = encoded.decode("utf-8")
+        if decoded != text and len(decoded) > 0:
+            return decoded
+    except Exception:
+        pass
+
+    # Fallback to dictionary replacement
+    replacements = {
+        "â€™": "’",
+        "â€œ": "“",
+        "â€": "”",
+        "â€“": "–",
+        "â€”": "—",
+        "â€¢": "•",
+        "â€¦": "…",
+        "â„¢": "™",
+        "Ã©": "é",
+        "Ã¡": "á",
+        "Ã³": "ó",
+        "Ãº": "ú",
+        "Ã±": "ñ",
+        "Ã¼": "ü",
+        "Ã¤": "ä",
+        "Ã¶": "ö",
+        "ÃŸ": "ß",
+        "Â ": " ",
+        "Â": "",
+    }
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+    return text
+
 # ---------------------------------------------------------------------------
 # Source-type queries
 # One targeted query per type. Quoted program name keeps Tavily grounded.
@@ -243,6 +284,20 @@ def _firecrawl_fetch(keys: list[str], url: str) -> tuple[Optional[str], Optional
                 markdown = result.get("markdown") or result.get("content") or None
                 html = result.get("html") or None
 
+            # Paywall detection: reject content that looks like a login/subscribe wall
+            if markdown:
+                paywall_signals = [
+                    "subscribe to read", "subscribe to continue", "subscribe now",
+                    "create an account", "sign in to read", "log in to read",
+                    "already a subscriber", "this content is for subscribers",
+                    "member-only", "premium content", "unlock this article",
+                    "register to read", "free registration required",
+                ]
+                lower_md = markdown.lower()
+                if any(signal in lower_md for signal in paywall_signals) and len(markdown) < 2000:
+                    log.warning("firecrawl_paywall_detected", url=url, content_length=len(markdown))
+                    return None, None
+
             return markdown, html
         except Exception as exc:
             log.warning("firecrawl_key_failed_rotating", key_prefix=k[:6], error=str(exc)[:200])
@@ -323,6 +378,23 @@ async def discover_sources(
     unique_candidates = list(seen_urls.values())
     log.info("after_dedup", unique_count=len(unique_candidates))
 
+    # Stream unique candidate pages discovered
+    from orchestrator.events import emit_event
+    import json
+    for idx, c in enumerate(unique_candidates):
+        item = {
+            "title": c.title or "",
+            "url": c.url,
+            "snippet": c.tavily_snippet or "",
+            "domain": c.url.split("/")[2] if "//" in c.url else c.url
+        }
+        await emit_event(
+            str(program_id),
+            "discovering_sources",
+            0.05 + 0.10 * ((idx + 1) / len(unique_candidates)) if unique_candidates else 0.15,
+            json.dumps({"item": item, "count": idx + 1})
+        )
+
     if not unique_candidates:
         log.info("no_sources_found", program=program_name)
         return []
@@ -334,11 +406,52 @@ async def discover_sources(
     firecrawl_count = 0
 
     async with httpx.AsyncClient(headers={"User-Agent": "InfoVac/1.0 (+https://github.com/Hrishikesh-Prasad-R/info-vac)"}) as http:
-        for candidate in unique_candidates:
+        for idx, candidate in enumerate(unique_candidates):
+            # Emit crawling started event
+            start_item = {
+                "url": candidate.url,
+                "status": "active",
+                "reason": "",
+                "title": candidate.title or "",
+                "domain": candidate.url.split("/")[2] if "//" in candidate.url else candidate.url
+            }
+            progress_val = 0.15 + 0.10 * (idx / len(unique_candidates))
+            await emit_event(
+                str(program_id),
+                "crawling_sources",
+                progress_val,
+                json.dumps({
+                    "item": start_item,
+                    "count": idx + 1,
+                    "total": len(unique_candidates)
+                })
+            )
+
             # Robots check — returns 'allowed' | 'blocked' | 'robots_unverified'
             robots_status = await _check_robots(candidate.url, http)
             if robots_status == "blocked":
                 log.info("robots_blocked", url=candidate.url)
+                # Emit crawl failure event before continuing
+                status_str = "failed"
+                reason_str = "Robots blocked"
+                item = {
+                    "url": candidate.url,
+                    "status": status_str,
+                    "reason": reason_str,
+                    "title": candidate.title or "",
+                    "domain": candidate.url.split("/")[2] if "//" in candidate.url else candidate.url
+                }
+                progress_val_fin = 0.15 + 0.10 * ((idx + 1) / len(unique_candidates))
+                await emit_event(
+                    str(program_id),
+                    "crawling_sources",
+                    progress_val_fin,
+                    json.dumps({
+                        "item": item,
+                        "count": idx + 1,
+                        "total": len(unique_candidates)
+                    })
+                )
                 continue
             # 'robots_unverified' → proceed but stamp fetch_status below (Decision #1-D)
 
@@ -377,7 +490,7 @@ async def discover_sources(
                     resp = await http.get(candidate.url, headers=headers, timeout=10.0, follow_redirects=True)
                     if resp.status_code == 200:
                         from bs4 import BeautifulSoup
-                        soup = BeautifulSoup(resp.text, "html.parser")
+                        soup = BeautifulSoup(resp.content, "html.parser")
                         for tag in soup(["script", "style", "nav", "footer", "header"]):
                             tag.decompose()
                         
@@ -400,7 +513,11 @@ async def discover_sources(
                     log.warning("bs4_scraping_fallback_failed", url=candidate.url, error=str(fallback_exc)[:200])
                     raw_content = candidate.tavily_snippet
                     fetch_method = "tavily_snippet"
-                    fetch_status = "degraded_tavily_fallback"
+                    fetch_status = "tavily_fallback"
+
+            # Clean mojibake from crawled title and content before writing to DB (Problem 1)
+            raw_content_cleaned = clean_utf8_mojibake(raw_content)
+            title_cleaned = clean_utf8_mojibake(candidate.title) if candidate.title else None
 
             # ----------------------------------------------------------
             # Step 4: Insert into DB (skip if already exists for this program)
@@ -409,9 +526,9 @@ async def discover_sources(
                 program_id=program_id,
                 url=candidate.url,
                 source_type=candidate.source_type,
-                title=candidate.title[:500] if candidate.title else None,
-                raw_content=raw_content,
-                content_hash=Source.make_hash(raw_content),
+                title=title_cleaned[:500] if title_cleaned else None,
+                raw_content=raw_content_cleaned,
+                content_hash=Source.make_hash(raw_content_cleaned),
                 fetch_method=fetch_method,
                 fetch_status=fetch_status,
                 raw_html=raw_html,
@@ -438,6 +555,27 @@ async def discover_sources(
                 )
                 if existing:
                     stored.append(existing)
+
+            status_str = "success" if fetch_status == "success" else "failed"
+            reason_str = "" if fetch_status == "success" else f"Scrape failed ({fetch_status})"
+            item = {
+                "url": candidate.url,
+                "status": status_str,
+                "reason": reason_str,
+                "title": candidate.title or "",
+                "domain": candidate.url.split("/")[2] if "//" in candidate.url else candidate.url
+            }
+            progress_val_fin = 0.15 + 0.10 * ((idx + 1) / len(unique_candidates))
+            await emit_event(
+                str(program_id),
+                "crawling_sources",
+                progress_val_fin,
+                json.dumps({
+                    "item": item,
+                    "count": idx + 1,
+                    "total": len(unique_candidates)
+                })
+            )
 
     await db.commit()
     log.info(

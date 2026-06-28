@@ -165,10 +165,14 @@ async def test_pipeline_emits_events_in_order(monkeypatch):
         "verifying", "verified",
         "narrating", "complete",
     ]
-    # Check each expected stage is present and in sequence
-    filtered = [s for s in emitted if s in expected_order]
-    assert filtered == expected_order, (
-        f"Stage order mismatch.\nExpected: {expected_order}\nGot:      {filtered}\n"
+    # Check each expected stage is present and in sequence (deduplicating consecutive duplicates)
+    deduped_filtered = []
+    for s in emitted:
+        if s in expected_order:
+            if not deduped_filtered or deduped_filtered[-1] != s:
+                deduped_filtered.append(s)
+    assert deduped_filtered == expected_order, (
+        f"Stage order mismatch.\nExpected: {expected_order}\nGot:      {deduped_filtered}\n"
         f"Full emitted sequence: {emitted}"
     )
 

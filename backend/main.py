@@ -13,18 +13,19 @@ import asyncio
 import json
 import os
 import uuid
-from typing import AsyncGenerator
+from datetime import datetime
+from typing import AsyncGenerator, Optional
 
 import asyncpg
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db import get_db
-from backend.models import Program, Narrative, Comparison
+from backend.models import Program, Narrative, Comparison, ExtractedField, PipelineEvent
 from backend.comparator import compare_programs
 from orchestrator.graph import run_pipeline
 
@@ -54,6 +55,7 @@ _ASYNCPG_DSN = os.getenv(
 
 class ProgramCreate(BaseModel):
     name: str
+    force: bool = False  # if True, bypass dedup cache and run a fresh analysis
 
 
 class ProgramResponse(BaseModel):
@@ -68,6 +70,42 @@ class CompareRequest(BaseModel):
     program_ids: list[uuid.UUID]
 
 
+class ExtractedFieldResponse(BaseModel):
+    id: uuid.UUID
+    program_id: uuid.UUID
+    category: str
+    field_name: str
+    field_value: Optional[str] = None
+    is_null: bool
+    claimed_snippet: Optional[str] = None
+    gate_passed: Optional[bool] = None
+    match_score: Optional[float] = None
+    citation_start: Optional[int] = None
+    citation_end: Optional[int] = None
+    corroboration_score: Optional[float] = None
+    authority_score: Optional[float] = None
+    recency_score: Optional[float] = None
+    confidence: Optional[float] = None
+    source_id: Optional[uuid.UUID] = None
+    access_date: Optional[datetime] = None
+    contradiction_flag: bool
+    contradiction_note: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PipelineEventResponse(BaseModel):
+    id: str
+    program_id: uuid.UUID
+    stage: str
+    progress: float
+    detail: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -77,12 +115,99 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/programs", response_model=list[ProgramResponse])
+async def list_programs(db: AsyncSession = Depends(get_db)):
+    """List all programs in the database."""
+    result = await db.execute(select(Program).order_by(Program.created_at.desc()))
+    return result.scalars().all()
+
+
+@app.get("/api/fields", response_model=list[ExtractedFieldResponse])
+async def list_all_fields(db: AsyncSession = Depends(get_db)):
+    """Return latest extracted fields across all programs."""
+    result = await db.execute(select(ExtractedField).order_by(ExtractedField.created_at.asc()))
+    all_fields = result.scalars().all()
+    
+    # Group by program_id to apply get_latest_only per program
+    by_program = {}
+    for f in all_fields:
+        by_program.setdefault(f.program_id, []).append(f)
+        
+    latest_fields = []
+    for prog_id, fields in by_program.items():
+        latest_fields.extend(ExtractedField.get_latest_only(fields))
+        
+    return latest_fields
+
+
+@app.get("/api/programs/{program_id}/fields", response_model=list[ExtractedFieldResponse])
+async def get_program_fields(program_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Return all extracted fields for a program, keeping only the latest run per field_name."""
+    result = await db.execute(
+        select(ExtractedField).where(ExtractedField.program_id == program_id)
+    )
+    fields = result.scalars().all()
+    return ExtractedField.get_latest_only(fields)
+
+
+@app.get("/api/programs/{program_id}/events", response_model=list[PipelineEventResponse])
+async def get_program_events(program_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Return all pipeline events for a program ordered sequentially."""
+    result = await db.execute(
+        select(PipelineEvent)
+        .where(PipelineEvent.program_id == program_id)
+        .order_by(PipelineEvent.created_at.asc(), PipelineEvent.id.asc())
+    )
+    events = result.scalars().all()
+    response = []
+    for e in events:
+        try:
+            p_val = float(e.progress) if e.progress else 0.0
+        except ValueError:
+            p_val = 0.0
+        response.append(
+            PipelineEventResponse(
+                id=e.id,
+                program_id=e.program_id,
+                stage=e.stage,
+                progress=p_val,
+                detail=e.detail,
+                created_at=e.created_at
+            )
+        )
+    return response
+
+
 @app.post("/api/programs", response_model=ProgramResponse, status_code=200)
 async def create_program(body: ProgramCreate, db: AsyncSession = Depends(get_db)):
-    """Create a program row and return its UUID. Does NOT start the pipeline."""
+    """Create a program row and return its UUID. Does NOT start the pipeline.
+    
+    Smart deduplication: if a program with the same name (case-insensitive)
+    already exists with status 'complete', return it immediately — no re-crawl needed.
+    """
     if not body.name or not body.name.strip():
         raise HTTPException(status_code=422, detail="name must not be empty")
-    program = Program(name=body.name.strip())
+    
+    name_clean = body.name.strip()
+
+    # Check for an existing completed program with the same name (case-insensitive)
+    # Skip this check if force=True (user wants a fresh re-analysis)
+    if not body.force:
+        existing_res = await db.execute(
+            select(Program)
+            .where(
+                func.lower(Program.name) == func.lower(name_clean),
+                Program.status == "complete",
+            )
+            .order_by(Program.created_at.desc())
+            .limit(1)
+        )
+        existing = existing_res.scalars().first()
+        if existing:
+            # Return the cached complete program — frontend will skip the pipeline
+            return existing
+
+    program = Program(name=name_clean)
     db.add(program)
     await db.commit()
     await db.refresh(program)

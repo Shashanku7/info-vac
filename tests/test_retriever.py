@@ -129,7 +129,7 @@ async def test_fetch_method_recorded(temp_program, db_session):
     if not sources:
         pytest.skip("No sources returned — check API keys.")
 
-    valid_methods = {"firecrawl", "tavily_snippet"}
+    valid_methods = {"firecrawl", "tavily_snippet", "beautifulsoup"}
     for s in sources:
         assert s.fetch_method in valid_methods, (
             f"Source {s.url} has unexpected fetch_method: {s.fetch_method!r}"

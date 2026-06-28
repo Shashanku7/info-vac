@@ -26,13 +26,13 @@ docker compose up -d
 
 echo.
 echo [3/5] Setting up Python Virtual Environment...
-if not exist ".venv" (
-    python -m venv .venv
+if not exist "venv_infovac" (
+    python -m venv venv_infovac
 )
 
 echo.
 echo [4/5] Installing requirements...
-call .\.venv\Scripts\activate.bat
+call .\venv_infovac\Scripts\activate.bat
 pip install -r requirements.txt
 
 echo.
@@ -44,6 +44,6 @@ echo ==============================================
 echo Setup Complete! 
 echo.
 echo NOTE: Make sure you have added your API keys to the .env file!
-echo To run the server, use: .\.venv\Scripts\uvicorn.exe backend.main:app --reload
+echo To run the server, use: .\venv_infovac\Scripts\uvicorn.exe backend.main:app --reload
 echo ==============================================
 pause

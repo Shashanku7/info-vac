@@ -40,7 +40,15 @@ class MatrixItem(BaseModel):
     rationale: str = Field(
         description=(
             "Factual strategic rationale explaining the ranking order. "
-            "Must end with (source: <url>) citing the exact URL from the GROUNDED DATA block."
+            "Must cite specific field names from the GROUNDED DATA block in brackets [field_name] "
+            "and end with (source: <url>) citing the exact URL from the data."
+        )
+    )
+    supporting_field_names: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Exact field_name keys from the GROUNDED DATA block that support this ranking. "
+            "E.g. ['base_earn_rate', 'earn_cap']. Only include fields that actually exist in the data."
         )
     )
 
@@ -50,7 +58,7 @@ class MarketMatrixOutput(BaseModel):
     executive_summary: str = Field(
         description=(
             "2-3 sentence high-level analyst verdict comparing all programs. "
-            "Include inline (source: <url>) citations."
+            "Include inline (source: <url>) citations from the GROUNDED DATA block."
         )
     )
     matrix: list[MatrixItem] = Field(
@@ -59,7 +67,7 @@ class MarketMatrixOutput(BaseModel):
     strategic_recommendations: str = Field(
         description=(
             "Analyst-grade strategic takeaways and recommendations. "
-            "Include inline (source: <url>) citations."
+            "Include inline (source: <url>) citations from the GROUNDED DATA block."
         )
     )
 
@@ -72,10 +80,11 @@ _SYSTEM_PROMPT = """You are a loyalty program analyst writing a competitive inte
 
 Rules:
 1. Use ONLY the information in the GROUNDED DATA block. Do not use any training knowledge.
-2. Every sentence that states a specific fact must end with (source: <url>) using the exact URL from the data.
+2. Every sentence that states a specific fact must cite the field using [field_name] notation AND end with (source: <url>) using the exact URL from the data.
 3. For each category in the matrix, rank the programs from best to worst and write a professional strategic rationale.
-4. If a category has no data for any program, skip it entirely — do not pad with guesses.
-5. Do not invent, infer, or extrapolate beyond what is in the GROUNDED DATA block.
+4. In supporting_field_names, list ONLY the exact field_name keys from the GROUNDED DATA block that you used for the ranking. Do not list field names that are not present in the data.
+5. If a category has no data for any program, skip it entirely — do not pad with guesses.
+6. Do not invent, infer, or extrapolate beyond what is in the GROUNDED DATA block.
 """
 
 _CATEGORY_LABELS: dict[str, str] = {

@@ -53,19 +53,30 @@ log = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 def _get_available_backends() -> list[dict[str, Any]]:
-    """Return a list of available LLM configurations based on environment keys."""
+    """Return a list of available LLM configurations based on environment keys.
+    
+    Priority order:
+    1. Gemini (primary — 3 rotating keys)
+    2. Ollama cloud
+    3. Groq (fast free-tier fallback)
+    4. Anthropic Claude
+    5. OpenAI
+    """
     backends = []
     from backend.embeddings import _get_gemini_keys
     gemini_keys = _get_gemini_keys()
     ollama_key = os.environ.get("OLLAMA_API_KEY", "")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
+    groq_key = os.environ.get("GROQ_API_KEY", "")
+    groq_model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
+    # 1. Gemini keys (primary)
     for idx, g_key in enumerate(gemini_keys):
         from openai import OpenAI
         backends.append({
             "provider": f"gemini-key-{idx+1}",
-            "model": "gemini-1.5-flash",
+            "model": "gemini-2.5-flash",
             "client": lambda k=g_key: instructor.from_openai(
                 OpenAI(
                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -74,6 +85,8 @@ def _get_available_backends() -> list[dict[str, Any]]:
                 mode=instructor.Mode.JSON,
             )
         })
+
+    # 2. Ollama cloud
     if ollama_key:
         from openai import OpenAI
         backends.append({
@@ -87,6 +100,23 @@ def _get_available_backends() -> list[dict[str, Any]]:
                 mode=instructor.Mode.JSON,
             )
         })
+
+    # 3. Groq (fast free-tier fallback)
+    if groq_key:
+        from openai import OpenAI
+        backends.append({
+            "provider": "groq",
+            "model": groq_model,
+            "client": lambda: instructor.from_openai(
+                OpenAI(
+                    base_url="https://api.groq.com/openai/v1",
+                    api_key=groq_key,
+                ),
+                mode=instructor.Mode.JSON,
+            )
+        })
+
+    # 4. Anthropic Claude
     if anthropic_key and not anthropic_key.startswith("sk-ant-YOUR_KEY_HERE"):
         import anthropic
         backends.append({
@@ -96,6 +126,8 @@ def _get_available_backends() -> list[dict[str, Any]]:
                 anthropic.Anthropic(api_key=anthropic_key)
             )
         })
+
+    # 5. OpenAI
     if openai_key:
         from openai import OpenAI
         backends.append({
@@ -109,11 +141,12 @@ def _get_available_backends() -> list[dict[str, Any]]:
 
     if not backends:
         raise ValueError(
-            "No LLM key found. Please set GEMINI_API_KEY, OLLAMA_API_KEY, "
+            "No LLM key found. Please set GEMINI_API_KEY, GROQ_API_KEY, "
             "ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env"
         )
 
     return backends
+
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +306,7 @@ def _calculate_usage_cost(result: Any, provider: str) -> float:
         "ollama-cloud":  {"in": 0.30,  "out": 0.60},
         "anthropic":     {"in": 0.80,  "out": 4.00},
         "openai":        {"in": 0.15,  "out": 0.60},
+        "groq":          {"in": 0.05,  "out": 0.10},
     }
     cfg = rates.get(provider, {"in": 0.15, "out": 0.60})
     cost = ((input_tokens / 1_000_000.0) * cfg["in"]) + ((output_tokens / 1_000_000.0) * cfg["out"])
@@ -357,12 +391,16 @@ _CATEGORY_MAP = [
 def extract_fields(
     program_name: str,
     sources: list,
+    program_id: str = None,
+    main_loop: Any = None,
 ) -> ExtractedSchema:
     """Extract all 44 fields across 9 categories from the provided sources in parallel.
 
     Args:
         program_name: Human-readable program name (e.g., "Delta SkyMiles")
         sources:      List of Source ORM objects with raw_content populated
+        program_id:   Optional program UUID string for progress events
+        main_loop:    Optional asyncio loop to post progress updates
 
     Returns:
         ExtractedSchema with all 9 category sub-models populated.
@@ -386,8 +424,13 @@ def extract_fields(
             for cat_name, cat_model, cat_key in _CATEGORY_MAP
         }
 
+        completed_count = 0
+        completed_fields_count = 0
+        total_fields_count = 45
         for future in concurrent.futures.as_completed(future_to_cat):
             cat_name, cat_model, cat_key = future_to_cat[future]
+            completed_count += 1
+            has_error = False
             try:
                 res_tuple = future.result()
                 if isinstance(res_tuple, tuple):
@@ -397,6 +440,7 @@ def extract_fields(
             except Exception as exc:
                 log.error("future_raised_exception", category=cat_name, error=str(exc))
                 result, cost = None, 0.0
+                has_error = True
 
             total_cost_usd += cost
 
@@ -411,6 +455,36 @@ def extract_fields(
                     }
                 )
             category_results[cat_key] = result
+
+            fields_in_category = list(result.model_fields.keys())
+            category_status = "failed" if has_error else "completed"
+
+            for field_name in fields_in_category:
+                completed_fields_count += 1
+                if program_id and main_loop:
+                    from orchestrator.events import emit_event
+                    import json
+                    import asyncio
+                    
+                    item = {
+                        "field_name": field_name,
+                        "category": cat_name,
+                        "status": category_status
+                    }
+                    progress_val = 0.30 + 0.23 * (completed_fields_count / total_fields_count)
+                    asyncio.run_coroutine_threadsafe(
+                        emit_event(
+                            program_id,
+                            "extracting_fields",
+                            progress_val,
+                            json.dumps({
+                                "item": item,
+                                "count": completed_fields_count,
+                                "total": total_fields_count
+                            })
+                        ),
+                        main_loop
+                    )
 
     schema = ExtractedSchema(
         program_basics=category_results["program_basics"],
@@ -469,6 +543,8 @@ def retry_failed_fields(
     program_name: str,
     sources: list,
     failed_fields: dict[str, list[str]],
+    program_id: str = None,
+    main_loop: Any = None,
 ) -> tuple[dict[str, dict[str, dict]], float]:
     """One-shot LLM retry for fields that failed gate verification.
 
@@ -546,13 +622,29 @@ def retry_failed_fields(
             executor.submit(_retry_category, cat_key, field_names): cat_key
             for cat_key, field_names in failed_fields.items()
         }
+        completed_count = 0
         for future in concurrent.futures.as_completed(future_to_cat):
             cat_key = future_to_cat[future]
+            completed_count += 1
             try:
                 _, cat_res, cost = future.result()
                 total_retry_cost += cost
                 if cat_res:
                     results[cat_key] = cat_res
+                
+                if program_id and main_loop:
+                    from orchestrator.events import emit_event
+                    import asyncio
+                    progress_val = 0.70 + 0.08 * (completed_count / len(failed_fields))
+                    asyncio.run_coroutine_threadsafe(
+                        emit_event(
+                            program_id,
+                            "verifying",
+                            progress_val,
+                            f"Retried verification for category: {cat_key} ({completed_count}/{len(failed_fields)})"
+                        ),
+                        main_loop
+                    )
             except Exception as exc:
                 log.error("retry_future_failed", category=cat_key, error=str(exc))
 
@@ -577,12 +669,21 @@ class FallbackCompletions:
                 current_kwargs = dict(kwargs)
                 current_kwargs["model"] = model_name
                 
-                if hasattr(client, "chat") and hasattr(client.chat, "completions"):
-                    return client.chat.completions.create(**current_kwargs)
-                elif hasattr(client, "completions"):
-                    return client.completions.create(**current_kwargs)
+                if "response_model" in current_kwargs:
+                    if hasattr(client, "chat") and hasattr(client.chat, "completions"):
+                        return client.chat.completions.create(**current_kwargs)
+                    elif hasattr(client, "completions"):
+                        return client.completions.create(**current_kwargs)
+                    else:
+                        return client.client.chat.completions.create(**current_kwargs)
                 else:
-                    return client.client.chat.completions.create(**current_kwargs)
+                    raw_client = getattr(client, "client", client)
+                    if hasattr(raw_client, "chat") and hasattr(raw_client.chat, "completions"):
+                        return raw_client.chat.completions.create(**current_kwargs)
+                    elif hasattr(raw_client, "completions"):
+                        return raw_client.completions.create(**current_kwargs)
+                    else:
+                        return raw_client.chat.completions.create(**current_kwargs)
             except Exception as exc:
                 log.warning("llm_routing_failover", provider=backend["provider"], model=backend["model"], error=str(exc))
                 last_exc = exc

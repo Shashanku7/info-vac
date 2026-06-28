@@ -36,7 +36,7 @@ async def test_e2e_run_completes():
     """
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=90) as client:
         # Step 1: Create program
-        resp = await client.post("/api/programs", json={"name": "Starbucks Rewards"})
+        resp = await client.post("/api/programs", json={"name": "Starbucks Rewards", "force": True})
         assert resp.status_code == 200, f"Create failed: {resp.text}"
         program_id = resp.json()["id"]
         assert uuid.UUID(program_id)  # valid UUID
@@ -96,7 +96,7 @@ async def test_sse_events_in_correct_order():
     ]
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=90) as client:
-        resp = await client.post("/api/programs", json={"name": "Marriott Bonvoy"})
+        resp = await client.post("/api/programs", json={"name": "Marriott Bonvoy", "force": True})
         assert resp.status_code == 200
         program_id = resp.json()["id"]
 

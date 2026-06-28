@@ -21,7 +21,7 @@ from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 
 from backend.db import make_background_session, AsyncSessionLocal
 from backend.extractor import extract_fields, ExtractedSchema, retry_failed_fields
-from backend.gate import gate_verify, find_best_source_for_quote
+from backend.gate import gate_verify, find_best_source_for_quote, gate_verify_multi_source
 from backend.models import ExtractedField
 from backend.narrator import generate_narrative
 from backend.retriever import discover_sources
@@ -214,7 +214,7 @@ async def extract_node(state: PipelineState) -> PipelineState:
     try:
         loop = asyncio.get_running_loop()
         schema = await loop.run_in_executor(
-            None, extract_fields, program_name, proxies
+            None, extract_fields, program_name, proxies, program_id, loop
         )
         schema_dict = schema.model_dump()
     except Exception as exc:
@@ -309,55 +309,46 @@ async def verify_node(state: PipelineState) -> PipelineState:
     # Fields that still fail even after multi-source scan → eligible for LLM retry
     retry_needed: dict[str, list[str]] = {}  # {cat_key: [field_name, ...]}
 
-    for cat_key, field_name, ev_dict in field_rows:
+    for idx, (cat_key, field_name, ev_dict) in enumerate(field_rows):
         value          = ev_dict.get("value")
         evidence_quote = ev_dict.get("evidence_quote")
         source_url     = ev_dict.get("source_url")
-
-        # Choose which source content to gate against
-        source_content    = ""
         matched_source_id: str | None = None
 
-        if source_url and source_url in url_to_source:
-            source_content    = url_to_source[source_url].get("raw_content", "")
-            matched_source_id = url_to_source[source_url].get("id")
-        elif source_dicts:
-            source_content = " ".join(
-                d.get("raw_content", "") for d in source_dicts[:5]
-            )
+        # Emit field-level verification progress
+        progress_val = 0.60 + 0.10 * ((idx + 1) / len(field_rows))
+        await emit_event(
+            program_id,
+            "verifying",
+            progress_val,
+            f"Verifying field {idx+1}/{len(field_rows)}: {cat_key}.{field_name}"
+        )
 
-        gate_result = gate_verify(
+        # Multi-source segment verification gate (Problem 2)
+        gate_result, matched_url, matched_id = gate_verify_multi_source(
             field_name=f"{cat_key}.{field_name}",
             claimed_value=value,
             evidence_quote=evidence_quote,
-            source_raw_content=source_content,
-        )
-        gate_result = await run_judge_if_borderline(
-            gate_result, value, evidence_quote, source_content, f"{cat_key}.{field_name}"
+            url_to_source=url_to_source,
         )
 
-        # ---- Auto re-attribution: scan ALL sources if gate failed -----------
-        if not gate_result.passed and evidence_quote and value is not None:
-            best_url, best_id = find_best_source_for_quote(
-                evidence_quote, url_to_source
-            )
-            if best_url and best_url != source_url:
-                new_content  = url_to_source[best_url].get("raw_content", "")
-                retry_gate   = gate_verify(
-                    field_name=f"{cat_key}.{field_name}",
-                    claimed_value=value,
-                    evidence_quote=evidence_quote,
-                    source_raw_content=new_content,
-                )
-                retry_gate = await run_judge_if_borderline(
-                    retry_gate, value, evidence_quote, new_content, f"{cat_key}.{field_name}"
-                )
-                if retry_gate.passed:
-                    gate_result       = retry_gate
-                    matched_source_id = best_id
-                    source_url        = best_url
-                    log.info("gate_reattributed",
-                             field=field_name, new_url=best_url)
+        # Update attribution if a valid source matched
+        if gate_result.passed:
+            if matched_url:
+                source_url = matched_url
+                matched_source_id = matched_id
+        else:
+            # Check the claimed source if we need a fallback for borderline judge
+            if source_url and source_url in url_to_source:
+                matched_source_id = url_to_source[source_url].get("id")
+
+        matched_content = ""
+        if source_url and source_url in url_to_source:
+            matched_content = url_to_source[source_url].get("raw_content", "")
+
+        gate_result = await run_judge_if_borderline(
+            gate_result, value, evidence_quote, matched_content, f"{cat_key}.{field_name}"
+        )
 
         # ---- Mark for LLM retry if still failing with a non-null value -----
         if not gate_result.passed and value is not None:
@@ -399,7 +390,7 @@ async def verify_node(state: PipelineState) -> PipelineState:
         proxies = [_SrcProxy(d) for d in source_dicts]
         loop    = asyncio.get_running_loop()
         res_tuple = await loop.run_in_executor(
-            None, retry_failed_fields, program_name, proxies, retry_needed
+            None, retry_failed_fields, program_name, proxies, retry_needed, program_id, loop
         )
         if isinstance(res_tuple, tuple):
             retry_updates, retry_cost = res_tuple
@@ -432,33 +423,23 @@ async def verify_node(state: PipelineState) -> PipelineState:
                               rev.get("evidence_quote"),
                               rev.get("source_url"))
 
-                r_content = ""
-                r_src_id  = None
-                if ru and ru in url_to_source:
-                    r_content = url_to_source[ru].get("raw_content", "")
-                    r_src_id  = url_to_source[ru].get("id")
-                elif source_dicts:
-                    r_content = " ".join(
-                        d.get("raw_content", "") for d in source_dicts[:5]
-                    )
-
-                r_gate = gate_verify(
+                r_gate, r_matched_url, r_matched_id = gate_verify_multi_source(
                     field_name=f"{cat_key}.{field_name} [retry]",
                     claimed_value=rv,
                     evidence_quote=rq,
-                    source_raw_content=r_content,
+                    url_to_source=url_to_source,
                 )
                 if r_gate.passed:
                     final_gate   = r_gate
-                    final_src_id = r_src_id
+                    final_src_id = r_matched_id
                     final_quote  = rq
                     # Recompute confidence for retry-sourced value
-                    if rv and r_src_id:
-                        src   = url_to_source.get(ru or "", {})
+                    if rv and final_src_id:
+                        src   = url_to_source.get(r_matched_url or ru or "", {})
                         f_str = src.get("fetched_at")
                         f_dt  = datetime.fromisoformat(f_str) if f_str else None
                         vr2   = compute_confidence(
-                            [SourceEvidence(r_src_id,
+                            [SourceEvidence(final_src_id,
                                             src.get("source_type", "unknown"),
                                             rv, f_dt)],
                             total_sources,
@@ -517,7 +498,10 @@ async def verify_node(state: PipelineState) -> PipelineState:
                 field_value=final_gate.matched_value,
                 is_null=(final_gate.matched_value is None),
                 claimed_snippet=final_quote,
-                gate_passed=final_gate.passed,
+                gate_passed=(
+                    None if (final_gate.matched_value is None and final_gate.passed)
+                    else final_gate.passed
+                ),
                 match_score=round(final_gate.match_score, 4),
                 citation_start=c_start,
                 citation_end=c_end,

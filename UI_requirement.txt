@@ -1,0 +1,179 @@
+UI:
+Then you're aiming for what many of the best B2B companies optimize for: design that disappears. Users shouldn't think "nice UI"; they should think "this is easy."
+Companies like Stripe, Linear, Notion, Vercel, GitHub, and Figma all follow this philosophy.
+1. Colors: Use less color than you think
+I'd actually reduce color usage.
+Primary: #0F766E
+Accent: #F59E0B
+
+Background: #FAFAF9
+Surface: #FFFFFF
+
+Text:
+Primary: #1C1917
+Secondary: #57534E
+Muted: #A8A29E
+
+Border: #E7E5E4
+
+Success: #16A34A
+Error: #DC2626
+The primary color should appear in only about 5–10% of the interface.
+Most enterprise apps are 90% grayscale.
+________________________________________
+2. Radius
+Instead of
+6px
+I'd recommend
+8px
+8px has become a modern default. It feels polished without becoming playful.
+________________________________________
+3. Shadows
+Keep them extremely subtle.
+box-shadow:
+0 1px 2px rgba(0,0,0,.04);
+No large floating cards.
+The separation should come from whitespace first, shadows second.
+________________________________________
+4. Borders > Shadows
+Enterprise UI relies heavily on borders.
+1px #E7E5E4
+rather than
+box-shadow: 0 10px 50px ...
+________________________________________
+5. Spacing
+This matters more than colors.
+Use an 8-point spacing system:
+4
+8
+16
+24
+32
+48
+64
+96
+Never use random values like 13px or 27px.
+________________________________________
+6. Typography
+Geist is a great choice.
+A clean scale:
+H1 36
+H2 30
+H3 24
+H4 20
+
+Body 16
+
+Small 14
+
+Caption 12
+Prefer medium (500–600) over bold unless emphasis is necessary.
+________________________________________
+7. Buttons
+Keep them simple.
+Primary:
+Teal background
+White text
+No gradient
+No glow
+Secondary:
+White background
+Gray border
+Dark text
+Ghost:
+Transparent
+No border
+Avoid pill-shaped buttons.
+________________________________________
+8. Icons
+Use Lucide with:
+strokeWidth={1.5}
+or
+1.75
+This feels lighter and more refined.
+________________________________________
+9. Animations
+Minimal.
+•	150–200ms duration
+•	Ease-out
+•	Fade + slight movement (2–4px)
+•	No bounce
+•	No elastic effects
+Users should notice smoothness, not the animation itself.
+________________________________________
+10. Information Density
+Enterprise products often balance density and readability:
+✓ Plenty of whitespace
+✓ Compact tables
+✓ Clear hierarchy
+✓ Consistent alignment
+✓ Few decorative elements
+Don't make users scroll through oversized cards if they need to work with data.
+________________________________________
+11. Remove these common startup trends
+Avoid:
+•	❌ Glassmorphism
+•	❌ Neon gradients
+•	❌ Huge blurred backgrounds
+•	❌ Heavy drop shadows
+•	❌ Floating cards everywhere
+•	❌ Colorful icons by default
+•	❌ Large hero illustrations unless they add meaning
+•	❌ Overuse of animations
+________________________________________
+12. UI Principles to follow
+Think in terms of usability before aesthetics:
+•	Consistency: identical components behave identically.
+•	Visual hierarchy: size, weight, and spacing guide attention.
+•	Progressive disclosure: show advanced options only when needed.
+•	Recognition over recall: use labels and familiar patterns instead of making users remember.
+•	Clear feedback: every action should have an obvious result.
+•	Accessible contrast: maintain strong readability and obvious interactive states.
+•	Generous click targets: around 44×44px for interactive controls where appropriate.
+•	Predictable layouts: users should rarely wonder where to look next.
+________________________________________
+The overall aesthetic
+Your design language should feel like this:
+"Professional. Quiet. Precise. Intentional."
+Not:
+"Look at our beautiful UI."
+The best enterprise interfaces become almost invisible because they're consistent, restrained, and predictable. If you keep color, motion, and decoration minimal while investing heavily in spacing, typography, and interaction quality, you'll end up with a design that feels premium for years instead of chasing short-lived trends.
+
+
+Here is the massive, exhaustive Frontend Non-Negotiables Blueprint.
+I have split this into the two exact views you requested:
+1.	The Analyst Workspace (Main Page): Where the end-user (business analyst) inputs a program, reads the brief, uses the chat, and downloads the PDF.
+2.	The "Backend Stuff" (Admin/Metrics Page): Where you (or a data engineer) look under the hood to see the 43 raw fields, the Gate Analytics, the costs, and the system health.
+Here are the 26 non-negotiable features you must build to make this look like a $100M enterprise tool.
+🏢 Page 1: The Analyst Workspace (Main Landing Page)
+#	Feature / Component	UI Library / Implementation	Purpose
+1	Command-Line Style Input	Shadcn Input (Large, centered)	A clean, distraction-free input bar to type the loyalty program name or URL. No messy forms.
+2	SSE Pipeline Progress Tracker	Magic UI AnimatedList	Shows the 45-second backend process live (e.g., "Scraping Web...", "Extracting Data...").
+3	Network Degradation Banner	Shadcn Alert (Yellow)	If the SSE connection drops, show a subtle banner: "Connection unstable, falling back to polling."
+4	Consulting-Grade Typography	Tailwind Typography (prose)	Renders the LLM's Markdown Analyst Brief using the Geist font, 1.5 line height, and dark slate colors.
+5	Tabbed Interface	Shadcn Tabs	Allow the user to toggle between "Analyst Brief" (Text) and "Data Grid" (The 43 fields).
+6	Inline Citation Badges	Custom React <button>	Every fact in the brief must have a clickable [1], [2] badge that triggers the Evidence Tracker.
+7	Evidence UI Tracker (Drawer)	Shadcn Sheet (Right-side)	Slides out when a citation is clicked. Shows the raw scraped website text.
+8	Highlighting Engine	React <mark bg-yellow-200>	Uses the start_index and end_index from the DB to physically highlight the exact quote in the Drawer.
+9	Branded PDF Generator	@react-pdf/renderer	Converts the Analyst Brief into a formatted PDF with the Kobie Logo and proper page margins.
+10	One-Click CSV Export	Native JS Blob + URL	A button that instantly downloads the 43 extracted fields as an .xlsx or .csv for Excel users.
+11	"Copy to Clipboard" Action	lucide-react (Copy icon)	A tiny button in the top right of the brief to copy the raw markdown.
+12	Toggleable RAG Chat Widget	Shadcn Sheet or floating Card	A clean chat interface that doesn't block the main document.
+13	Streaming LLM Text	useChat (Vercel AI SDK)	Streams the chat responses token-by-token so the user never waits.
+14	Chat Quick-Action Buttons	Shadcn Badge (Clickable)	Pre-populated prompt buttons like: "What changed in the last 6 months?" or "Compare tiers."
+________________________________________
+⚙️ Page 2: The "Backend Stuff" (Data & Analytics Dashboard)
+#	Feature / Component	UI Library / Implementation	Purpose
+15	Unit Economics / Cost Card	Tremor Card + Metric	Displays: "Total Extraction Cost: $0.12" (Calculated via LangSmith/token usage).
+16	Gate Verification Analytics	Tremor DonutChart	Shows the Pass/Fail rate of the fuzzy-matcher (e.g., 94% facts passed, 6% hallucinated/rejected).
+17	Confidence Score Breakdown	Tremor BarChart	Breaks down the formula: Corroboration (0.5) vs Authority (0.3) vs Recency (0.2).
+18	Source Distribution Stats	Tremor Tracker	Shows where the data came from (e.g., 60% T&Cs, 30% FAQs, 10% Blogs).
+19	The 43-Field Data Grid	TanStack Table + Shadcn	A massive, scrollable, sortable table showing all 43 raw JSON fields extracted from the DB.
+20	Contradiction Warning Badges	Shadcn Badge (Destructive/Red)	If contradiction_flag == True, put a bright red warning tag next to that field in the data grid.
+21	Missing Data Styling	Tailwind text-muted-foreground	If a field is NOT_FOUND / NULL, style it in gray italics so it's visually distinct from real data.
+22	Human-in-the-Loop Queue	Shadcn Table	A queue of programs that have finished extraction but are waiting for admin /approve before publishing.
+23	Manual Data Override Form	Shadcn Form (React Hook Form)	Allows the Admin to manually correct a field if the Extractor LLM got it slightly wrong.
+24	Strategic Comparator Picker	Shadcn MultiSelect	A dropdown to select 2 (or more) programs to run through the /api/compare endpoint.
+25	Comparator Diff Matrix	Custom Tailwind Grid	A side-by-side visual diff highlighting advantages in Green and weaknesses in Red.
+26	Database Health Status	Shadcn Toast (Notifications)	Live alerts if Qdrant, Postgres, or the OpenAI API experiences latency.
+

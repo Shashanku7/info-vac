@@ -151,7 +151,14 @@ def test_instructor_returns_parsed_pydantic_output():
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from scripts.instructor_smoke import run_smoke_test, ProgramName
 
-    result = run_smoke_test()
+    try:
+        result = run_smoke_test()
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "quota" in err_msg or "429" in err_msg or "rate limit" in err_msg:
+            pytest.skip(f"Gemini API rate limit exceeded: {e}")
+        raise
+
     assert isinstance(result, ProgramName), (
         f"Expected ProgramName instance, got {type(result)}: {result!r}"
     )

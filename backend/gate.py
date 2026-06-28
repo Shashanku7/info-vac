@@ -63,6 +63,10 @@ def gate_verify(
       2. evidence_quote is None → rejected (non-null claim with no citation)
       3. evidence_quote not found in raw_content above threshold → rejected
     """
+    # Normalize empty or whitespace strings to None (Problem 4)
+    if claimed_value is not None and not claimed_value.strip():
+        claimed_value = None
+
     # Null values are always honest — gate passes trivially
     if claimed_value is None:
         return GateResult(
@@ -95,10 +99,33 @@ def gate_verify(
             rejection_reason="source raw_content is empty",
         )
 
-    # Fuzzy match: partial_ratio finds the best matching substring of source_raw_content
-    # for the evidence_quote, so partial quotes still score well.
-    raw_score = fuzz.partial_ratio(evidence_quote.lower(), source_raw_content.lower())
-    score = raw_score / 100.0  # normalize to 0.0–1.0
+    # Segment-based fuzzy verification for composite/stitched quotes (Problem 2)
+    # Split by standard ellipsis patterns and newlines
+    quote_clean = evidence_quote.replace("...", "\n").replace("â€¦", "\n").replace("...", "\n")
+    segments = [s.strip() for s in quote_clean.split("\n") if s.strip()]
+
+    if not segments:
+        return GateResult(
+            passed=False,
+            match_score=0.0,
+            matched_value=None,
+            rejection_reason="evidence_quote contains no text segments",
+        )
+
+    scores = []
+    for seg in segments:
+        if len(seg) < 8:  # skip tiny filler words to prevent false positives
+            continue
+        raw_score = fuzz.partial_ratio(seg.lower(), source_raw_content.lower())
+        scores.append(raw_score / 100.0)
+
+    if not scores:
+        # Fallback to checking the whole quote if all segments were too short
+        raw_score = fuzz.partial_ratio(evidence_quote.lower(), source_raw_content.lower())
+        score = raw_score / 100.0
+    else:
+        # The overall match score is the minimum score of all segments (weakest-link principle) (Problem 2)
+        score = min(scores)
 
     if score >= threshold:
         log.info(
@@ -184,12 +211,26 @@ def find_best_source_for_quote(
     best_url: Optional[str] = None
     best_id: Optional[str] = None
 
+    quote_clean = evidence_quote.replace("...", "\n").replace("â€¦", "\n").replace("...", "\n")
+    segments = [s.strip() for s in quote_clean.split("\n") if s.strip()]
+
     for url, src_dict in url_to_source.items():
         content = src_dict.get("raw_content", "")
         if not content:
             continue
-        raw_score = fuzz.partial_ratio(quote_lower, content.lower())
-        score = raw_score / 100.0
+
+        if not segments:
+            raw_score = fuzz.partial_ratio(quote_lower, content.lower())
+            score = raw_score / 100.0
+        else:
+            seg_scores = []
+            for seg in segments:
+                if len(seg) < 8:
+                    continue
+                raw_score = fuzz.partial_ratio(seg.lower(), content.lower())
+                seg_scores.append(raw_score / 100.0)
+            score = sum(seg_scores) / len(seg_scores) if seg_scores else 0.0
+
         if score > best_score:
             best_score = score
             best_url = url
@@ -209,3 +250,144 @@ def find_best_source_for_quote(
         threshold=threshold,
     )
     return None, None
+
+
+def gate_verify_multi_source(
+    field_name: str,
+    claimed_value: Optional[str],
+    evidence_quote: Optional[str],
+    url_to_source: dict[str, dict],
+    threshold: float = GATE_THRESHOLD,
+) -> tuple[GateResult, Optional[str], Optional[str]]:
+    """Verify each segment of evidence_quote against ALL available sources.
+    
+    Returns:
+        (GateResult, matched_url, matched_source_id)
+    """
+    # Normalize empty or whitespace strings to None (Problem 4)
+    if claimed_value is not None and not claimed_value.strip():
+        claimed_value = None
+
+    if claimed_value is None:
+        return GateResult(
+            passed=True,
+            match_score=1.0,
+            matched_value=None,
+            rejection_reason=None,
+        ), None, None
+
+    if not evidence_quote or not evidence_quote.strip():
+        log.warning(
+            "gate_reject_no_quote",
+            field=field_name,
+            claimed_value=claimed_value[:100] if claimed_value else None,
+        )
+        return GateResult(
+            passed=False,
+            match_score=0.0,
+            matched_value=None,
+            rejection_reason="non-null value has no evidence_quote",
+        ), None, None
+
+    # Segment-based fuzzy verification for composite/stitched quotes (Problem 2)
+    # Split by standard ellipsis patterns and newlines
+    quote_clean = evidence_quote.replace("...", "\n").replace("â€¦", "\n").replace("...", "\n")
+    segments = [s.strip() for s in quote_clean.split("\n") if s.strip()]
+
+    if not segments:
+        return GateResult(
+            passed=False,
+            match_score=0.0,
+            matched_value=None,
+            rejection_reason="evidence_quote contains no text segments",
+        ), None, None
+
+    # Track matches for each segment
+    segment_scores = []
+    segment_sources = []
+
+    for seg in segments:
+        if len(seg) < 8:  # skip tiny filler words to prevent false positives
+            continue
+        
+        # Find the best matching source for this segment
+        best_seg_score = 0.0
+        best_seg_url = None
+        best_seg_id = None
+
+        for url, src_dict in url_to_source.items():
+            content = src_dict.get("raw_content", "")
+            if not content:
+                continue
+            raw_score = fuzz.partial_ratio(seg.lower(), content.lower())
+            score = raw_score / 100.0
+            if score > best_seg_score:
+                best_seg_score = score
+                best_seg_url = url
+                best_seg_id = src_dict.get("id")
+
+        segment_scores.append(best_seg_score)
+        if best_seg_url:
+            segment_sources.append((best_seg_url, best_seg_id))
+
+    if not segment_scores:
+        # Fallback if all segments were too short
+        best_url, best_id = None, None
+        best_score = 0.0
+        for url, src_dict in url_to_source.items():
+            content = src_dict.get("raw_content", "")
+            if not content:
+                continue
+            raw_score = fuzz.partial_ratio(evidence_quote.lower(), content.lower())
+            score = raw_score / 100.0
+            if score > best_score:
+                best_score = score
+                best_url = url
+                best_id = src_dict.get("id")
+        
+        passed = best_score >= threshold
+        return GateResult(
+            passed=passed,
+            match_score=best_score,
+            matched_value=claimed_value if passed else None,
+            rejection_reason=None if passed else f"fuzzy match score {best_score:.3f} below threshold {threshold}",
+        ), best_url, best_id
+
+    # Weakest-link principle (Problem 2): min() instead of average()
+    min_score = min(segment_scores)
+    passed = min_score >= threshold
+
+    if passed:
+        # Attributing using majority vote: the source that matched the most segments (Thing 1)
+        primary_url, primary_id = None, None
+        if segment_sources:
+            from collections import Counter
+            counts = Counter(segment_sources)
+            (primary_url, primary_id), _ = counts.most_common(1)[0]
+        log.info(
+            "gate_multi_source_pass",
+            field=field_name,
+            score=round(min_score, 3),
+            threshold=threshold,
+        )
+        return GateResult(
+            passed=True,
+            match_score=min_score,
+            matched_value=claimed_value,
+            rejection_reason=None,
+        ), primary_url, primary_id
+    else:
+        log.warning(
+            "gate_multi_source_reject_low_score",
+            field=field_name,
+            score=round(min_score, 3),
+            threshold=threshold,
+            evidence_quote_preview=evidence_quote[:80] if evidence_quote else None,
+        )
+        return GateResult(
+            passed=False,
+            match_score=min_score,
+            matched_value=None,
+            rejection_reason=f"fuzzy match score {min_score:.3f} below threshold {threshold}",
+        ), None, None
+
