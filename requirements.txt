@@ -57,5 +57,6 @@ black
 # RAG (Phase 7)
 qdrant-client
 sentence-transformers
+rapidfuzz
 langchain-text-splitters
 torchvision
