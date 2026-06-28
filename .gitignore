@@ -32,5 +32,11 @@ postgres_data/
 .DS_Store
 Thumbs.db
 
-#temporary folder for internal testing
+# temporary folder for internal testing
 temp/
+
+# Temporary dumps
+phase*_output.txt
+starbucks_raw_markdown.txt
+all_starbucks_markdown.txt
+real_outputs.txt

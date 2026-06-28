@@ -17,5 +17,23 @@ services:
       retries: 10
     restart: unless-stopped
 
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://infovac:infovac_dev@postgres:5432/infovac
+      - ASYNCPG_DSN=postgresql://infovac:infovac_dev@postgres:5432/infovac
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+    restart: unless-stopped
+
 volumes:
   postgres_data:

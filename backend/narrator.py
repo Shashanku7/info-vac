@@ -144,11 +144,55 @@ def _count_words(text: str) -> int:
 # LLM call with one retry on word-count violation
 # ---------------------------------------------------------------------------
 
+def _calculate_usage_cost(result: Any, model_name: str) -> float:
+    """Extract token usage from the instructor result and compute dollar cost.
+
+    Gemini:  $0.075 / 1M input, $0.30 / 1M output
+    Ollama:  $0.300 / 1M input, $0.60 / 1M output (estimate)
+    Claude:  $0.800 / 1M input, $4.00 / 1M output (Haiku)
+    OpenAI:  $0.150 / 1M input, $0.60 / 1M output (4o-mini)
+    """
+    if not hasattr(result, "_raw_response") or not result._raw_response:
+        return 0.0
+    raw = result._raw_response
+    input_tokens = 0
+    output_tokens = 0
+
+    if hasattr(raw, "usage") and raw.usage:
+        usage = raw.usage
+        input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        output_tokens = getattr(usage, "completion_tokens", 0) or 0
+        if not input_tokens and not output_tokens:
+            input_tokens = getattr(usage, "input_tokens", 0) or 0
+            output_tokens = getattr(usage, "output_tokens", 0) or 0
+
+    model_lower = (model_name or "").lower()
+    if "gemini" in model_lower:
+        provider = "gemini"
+    elif "gemma" in model_lower:
+        provider = "ollama-cloud"
+    elif "claude" in model_lower:
+        provider = "anthropic"
+    else:
+        provider = "openai"
+
+    rates = {
+        "gemini":        {"in": 0.075, "out": 0.30},
+        "ollama-cloud":  {"in": 0.30,  "out": 0.60},
+        "anthropic":     {"in": 0.80,  "out": 4.00},
+        "openai":        {"in": 0.15,  "out": 0.60},
+    }
+    cfg = rates.get(provider, {"in": 0.15, "out": 0.60})
+    cost = ((input_tokens / 1_000_000.0) * cfg["in"]) + ((output_tokens / 1_000_000.0) * cfg["out"])
+    return round(cost, 6)
+
+
 def _call_narrator(
     client,
     model_name: str,
     context: str,
     program_name: str,
+    out_cost: dict[str, float] = None,
 ) -> str:
     """Run the Instructor call. Returns the brief text.
     Retries once if word count is out of bounds.
@@ -167,13 +211,16 @@ def _call_narrator(
     ]
 
     kwargs: dict = {"response_model": NarrativeOutput, "messages": messages}
-    # For Gemini Instructor client, the model is already bound, do not pass model.
     if model_name and not model_name.startswith("gemini"):
         kwargs["model"] = model_name
 
     result: NarrativeOutput = client.chat.completions.create(**kwargs)
     brief = result.brief
+    cost = _calculate_usage_cost(result, model_name)
     word_count = _count_words(brief)
+
+    if out_cost is not None:
+        out_cost["cost"] = out_cost.get("cost", 0.0) + cost
 
     if _MIN_WORDS <= word_count <= _MAX_WORDS:
         return brief
@@ -193,7 +240,11 @@ def _call_narrator(
 
     result2: NarrativeOutput = client.chat.completions.create(**kwargs)
     brief2 = result2.brief
+    cost2 = _calculate_usage_cost(result2, model_name)
     word_count2 = _count_words(brief2)
+
+    if out_cost is not None:
+        out_cost["cost"] = out_cost.get("cost", 0.0) + cost2
 
     if not (_MIN_WORDS <= word_count2 <= _MAX_WORDS):
         log.warning(
@@ -237,7 +288,7 @@ async def generate_narrative(
                 ExtractedField.is_null == False,       # noqa: E712
             )
         )
-        fields: list[ExtractedField] = list(fields_result.scalars().all())
+        fields: list[ExtractedField] = ExtractedField.get_latest_only(fields_result.scalars().all())
 
         # 2. Load source URLs for citation
         source_ids = {f.source_id for f in fields if f.source_id}
@@ -268,6 +319,7 @@ async def generate_narrative(
 
         client, model_name = _make_client()
         loop = asyncio.get_running_loop()
+        out_cost = {"cost": 0.0}
         brief = await loop.run_in_executor(
             None,
             _call_narrator,
@@ -275,8 +327,10 @@ async def generate_narrative(
             model_name,
             context,
             program_name,
+            out_cost,
         )
 
+        cost = out_cost.get("cost", 0.0)
         word_count = _count_words(brief)
 
         # 6. Persist to narratives table
@@ -288,12 +342,22 @@ async def generate_narrative(
             created_at=datetime.now(timezone.utc),
         )
         session.add(narrative)
+
+        if program:
+            from decimal import Decimal
+            try:
+                cost_val = float(cost)
+            except Exception:
+                cost_val = 0.0
+            program.total_cost = (program.total_cost or Decimal("0.0")) + Decimal(str(round(cost_val, 6)))
+
         await session.flush()
 
         log.info(
             "narrative_done",
             program_id=program_id,
             word_count=word_count,
+            cost_usd=cost,
         )
         return narrative
 

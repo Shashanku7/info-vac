@@ -235,3 +235,29 @@ pytest tests/phase0_test.py -v
 ### Status
 - Created `docs/solution.md` containing a brief, simple, summary of the solution approach, incorporating the MVP architecture diagram via Mermaid.
 - The document begins with the problem statement and concludes with the specific question for the Kobie mentor regarding standard RAG vs. PostgreSQL-backed deterministic verification.
+
+---
+
+## Handoff — 2026-06-28 — Resilience, Schema & Comparator Upgrades [COMPLETE]
+
+### Status
+Unit tests: **52/52 passed** in 18.14s (100% green). All resilience fallbacks, schema evolutionary migrations, and comparator matrix upgrades fully verified.
+
+### What was Built & Modified
+| File | Role |
+|---|---|
+| `backend/retriever.py` | Added local raw BeautifulSoup HTTP scraping fallback with user-agent spoofing if Firecrawl rate limits or fails. |
+| `backend/extractor.py` | Built a dynamic LLM client proxy `FallbackClient` that automatically retries the next backend (Gemini -> Ollama Cloud -> Claude -> OpenAI) if the current provider fails. |
+| `backend/chat.py` | Implemented RAG Chat fallback to Structured SQL context (facts + Narrator brief) if Qdrant Vector DB is completely unreachable. |
+| `backend/models.py` | Dropped `UNIQUE(program_id, field_name)` unique constraints (Migration `0005`), supporting history tracking and multiple pipeline runs. Added `program_ids` JSONB to `Comparison`. |
+| `backend/main.py` | Created `GET /api/programs/{id}/evolution` comparative changelog endpoint. Upgraded `POST /api/compare` to accept lists of `program_ids` and validate completed status. |
+| `backend/comparator.py` | Refactored `compare_programs` to accept a list of program IDs and output a ranked category comparison matrix (`MarketMatrixOutput`). |
+| `orchestrator/nodes.py` | Fixed critical bug: explicitly set `access_date` to parsed source fetch timestamp in `verify_node`. |
+| `Dockerfile` & `docker-compose.yml` | Configured production Dockerfile and simplified single-replica Compose setup. |
+| `tests/test_comparator.py` | Rewrote tests to assert correct rankings and structure for multi-program comparisons. |
+| `tests/test_rag_upgrades.py` | Wrote unit tests for hybrid search prefetch, metadata filtering, semantic LLM judge gate, and verifier integration. |
+
+### Design Decisions
+1. **Append-Only History:** By removing unique constraints and adding `get_latest_only()` logic to Postgres queries, we track the evolution of loyalty schemes without bloating the current chat or brief contexts.
+2. **DNS & Load Balancing Rejection:** Rejected multi-replica host port-range configuration in Docker Compose for development environment to preserve a clean single-port mapping (`8000:8000`), avoiding setup complexity.
+

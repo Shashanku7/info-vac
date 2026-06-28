@@ -1,6 +1,6 @@
 """Comparator — Phase 6.
 
-Generates a strategic competitive comparison between two loyalty programs
+Generates a strategic competitive comparison between multiple loyalty programs
 from gate-verified extracted_fields rows. Every factual claim includes an
 inline citation (source: <url>) derived from the verified data.
 
@@ -8,17 +8,13 @@ Grounding strategy:
   - Only gate_passed=TRUE AND is_null=FALSE rows are fed to the LLM.
   - Source URLs come from extracted_fields → sources.url.
   - The LLM repeats real URLs, it does not invent them.
-
-CRITICAL: This module never writes to extracted_fields.confidence.
-          It reads only from extracted_fields, sources, and programs,
-          and writes to comparisons.
 """
 from __future__ import annotations
 
 import asyncio
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
 
 import structlog
 from pydantic import BaseModel, Field
@@ -32,53 +28,37 @@ log = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Pydantic output schema — structured strategic diff
+# Pydantic output schema — Structured Market Matrix
 # ---------------------------------------------------------------------------
 
-class AdvantageItem(BaseModel):
-    """One strategic advantage one program holds over the other."""
-    area: str = Field(description="Category or aspect (e.g., 'Earn Mechanics', 'Digital Experience')")
-    description: str = Field(
+class MatrixItem(BaseModel):
+    """Rankings and rationale for a single loyalty program category."""
+    category: str = Field(description="The category name (e.g., 'Tier System', 'Earn Mechanics')")
+    rankings: list[str] = Field(
+        description="Ranked list of program names from best to worst, e.g. ['Starbucks Rewards', 'Delta SkyMiles']"
+    )
+    rationale: str = Field(
         description=(
-            "A specific, factual description of the advantage. "
+            "Factual strategic rationale explaining the ranking order. "
             "Must end with (source: <url>) citing the exact URL from the GROUNDED DATA block."
         )
     )
 
 
-class CategoryDiff(BaseModel):
-    """A meaningful difference between the two programs in one category."""
-    category: str = Field(description="The category name (e.g., 'Tier System')")
-    program_a_value: str = Field(description="What Program A offers in this category")
-    program_b_value: str = Field(description="What Program B offers in this category")
-    analysis: str = Field(
-        description="Why this difference matters strategically, with inline (source: <url>) citations"
-    )
-
-
-class ComparisonOutput(BaseModel):
-    """Structured strategic comparison between two loyalty programs."""
+class MarketMatrixOutput(BaseModel):
+    """Structured competitive market matrix comparison."""
     executive_summary: str = Field(
         description=(
-            "2-3 sentence high-level verdict comparing both programs. "
+            "2-3 sentence high-level analyst verdict comparing all programs. "
             "Include inline (source: <url>) citations."
         )
     )
-    advantages_a: list[AdvantageItem] = Field(
-        description="Strategic advantages Program A holds over Program B"
+    matrix: list[MatrixItem] = Field(
+        description="Category-by-category ranking and rationale."
     )
-    advantages_b: list[AdvantageItem] = Field(
-        description="Strategic advantages Program B holds over Program A"
-    )
-    key_differences: list[CategoryDiff] = Field(
-        description="Category-by-category differences where meaningful gaps exist"
-    )
-    gaps: list[str] = Field(
-        description="Missing capabilities or data gaps in either program"
-    )
-    strategic_recommendation: str = Field(
+    strategic_recommendations: str = Field(
         description=(
-            "Analyst-grade strategic takeaway: which program is stronger overall and why. "
+            "Analyst-grade strategic takeaways and recommendations. "
             "Include inline (source: <url>) citations."
         )
     )
@@ -88,21 +68,15 @@ class ComparisonOutput(BaseModel):
 # System prompt
 # ---------------------------------------------------------------------------
 
-_SYSTEM_PROMPT = """You are a loyalty program analyst writing a strategic competitive comparison.
+_SYSTEM_PROMPT = """You are a loyalty program analyst writing a competitive intelligence market matrix comparison.
 
 Rules:
 1. Use ONLY the information in the GROUNDED DATA block. Do not use any training knowledge.
 2. Every sentence that states a specific fact must end with (source: <url>) using the exact URL from the data.
-3. Focus on STRATEGIC differences — advantages, gaps, and differentiation — not just side-by-side listing.
-4. If a category has no data for either program, skip it entirely — do not pad with guesses.
+3. For each category in the matrix, rank the programs from best to worst and write a professional strategic rationale.
+4. If a category has no data for any program, skip it entirely — do not pad with guesses.
 5. Do not invent, infer, or extrapolate beyond what is in the GROUNDED DATA block.
-6. Be direct and analyst-grade: identify which program is stronger in each area and why.
 """
-
-
-# ---------------------------------------------------------------------------
-# Category labels (same as narrator)
-# ---------------------------------------------------------------------------
 
 _CATEGORY_LABELS: dict[str, str] = {
     "program_basics": "PROGRAM BASICS",
@@ -117,21 +91,15 @@ _CATEGORY_LABELS: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# Context assembly — grounded data block for both programs
+# Context assembly
 # ---------------------------------------------------------------------------
 
-async def _build_comparison_context(
-    program_a_name: str,
-    program_b_name: str,
-    fields_a: list[ExtractedField],
-    fields_b: list[ExtractedField],
+async def _build_comparison_context_multi(
+    programs_data: list[dict[str, Any]],
     url_by_source_id: dict[str, str],
 ) -> str:
-    """Build the GROUNDED DATA block with both programs side by side.
-
-    Only gate_passed=TRUE AND is_null=FALSE rows are included.
-    """
-
+    """Build the GROUNDED DATA block with multiple programs side by side."""
+    
     def _format_program_fields(
         program_name: str,
         fields: list[ExtractedField],
@@ -164,50 +132,13 @@ async def _build_comparison_context(
         "GROUNDED DATA (gate-verified only):",
         "=" * 60,
         "",
-        f"=== PROGRAM A: {program_a_name} ===",
     ]
-    lines.extend(_format_program_fields(program_a_name, fields_a))
-    lines.append("")
-    lines.append(f"=== PROGRAM B: {program_b_name} ===")
-    lines.extend(_format_program_fields(program_b_name, fields_b))
+    for prog in programs_data:
+        lines.append(f"=== PROGRAM: {prog['name']} ===")
+        lines.extend(_format_program_fields(prog['name'], prog['fields']))
+        lines.append("")
 
     return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# LLM call
-# ---------------------------------------------------------------------------
-
-def _call_comparator(
-    client,
-    model_name: str,
-    context: str,
-    program_a_name: str,
-    program_b_name: str,
-) -> dict:
-    """Run the Instructor call. Returns the comparison as a dict."""
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"Write a strategic competitive comparison between:\n"
-                f"  Program A: {program_a_name}\n"
-                f"  Program B: {program_b_name}\n\n"
-                f"{context}\n\n"
-                "Produce the strategic comparison now. Focus on advantages, gaps, "
-                "and differentiation — not just side-by-side data. "
-                "Use inline (source: <url>) after every fact."
-            ),
-        },
-    ]
-
-    kwargs: dict = {"response_model": ComparisonOutput, "messages": messages}
-    if model_name and not model_name.startswith("gemini"):
-        kwargs["model"] = model_name
-
-    result: ComparisonOutput = client.chat.completions.create(**kwargs)
-    return result.model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -218,12 +149,7 @@ async def _load_program_data(
     program_id: uuid.UUID,
     session: AsyncSession,
 ) -> tuple[str, list[ExtractedField], dict[str, str]]:
-    """Load program name, gate-passed fields, and source URL map.
-
-    Returns:
-        (program_name, fields, url_by_source_id)
-    """
-    # Load program name
+    """Load program name, gate-passed fields, and source URL map."""
     program = await session.get(Program, program_id)
     program_name = program.name if program else str(program_id)
 
@@ -231,13 +157,12 @@ async def _load_program_data(
     fields_result = await session.execute(
         select(ExtractedField).where(
             ExtractedField.program_id == program_id,
-            ExtractedField.gate_passed == True,   # noqa: E712
-            ExtractedField.is_null == False,       # noqa: E712
+            ExtractedField.gate_passed == True,
+            ExtractedField.is_null == False,
         )
     )
-    fields: list[ExtractedField] = list(fields_result.scalars().all())
+    fields = ExtractedField.get_latest_only(fields_result.scalars().all())
 
-    # Load source URLs for citation
     source_ids = {f.source_id for f in fields if f.source_id}
     url_by_source_id: dict[str, str] = {}
     if source_ids:
@@ -255,85 +180,104 @@ async def _load_program_data(
 # ---------------------------------------------------------------------------
 
 async def compare_programs(
-    program_a_id: str,
-    program_b_id: str,
-    session: AsyncSession,
+    program_ids_or_a_id: list[str] | str,
+    session_or_b_id: AsyncSession | str,
+    session: Optional[AsyncSession] = None,
 ) -> Optional[Comparison]:
-    """Generate and persist a strategic comparison between two programs.
+    """Generate and persist a strategic comparison between 2 or more programs.
 
-    Args:
-        program_a_id: UUID string of the first program.
-        program_b_id: UUID string of the second program.
-        session:      An active AsyncSession (caller provides, caller commits).
-
-    Returns:
-        A Comparison ORM row (flushed, not committed), or None on failure.
-
-    Raises:
-        Nothing — all exceptions are caught and logged. Returns None on failure.
+    Supports both old (a_id, b_id, session) signature and new (list[str], session) signature.
     """
-    pid_a = uuid.UUID(program_a_id)
-    pid_b = uuid.UUID(program_b_id)
-    log.info("comparison_start", program_a=program_a_id, program_b=program_b_id)
+    if isinstance(program_ids_or_a_id, str):
+        program_ids = [program_ids_or_a_id, session_or_b_id]
+        db_session = session
+    else:
+        program_ids = program_ids_or_a_id
+        db_session = session_or_b_id
+
+    if not db_session:
+        raise ValueError("Database session is required.")
+
+    log.info("comparison_start", program_ids=program_ids)
 
     try:
-        # 1. Load data for both programs
-        name_a, fields_a, urls_a = await _load_program_data(pid_a, session)
-        name_b, fields_b, urls_b = await _load_program_data(pid_b, session)
+        programs_data = []
+        url_map = {}
+        program_names = []
 
-        # Merge URL maps
-        url_map = {**urls_a, **urls_b}
+        for p_id in program_ids:
+            pid_uuid = uuid.UUID(p_id)
+            name, fields, urls = await _load_program_data(pid_uuid, db_session)
+            programs_data.append({
+                "id": pid_uuid,
+                "name": name,
+                "fields": fields,
+            })
+            url_map.update(urls)
+            program_names.append(name)
 
         # 2. Build grounded context block
-        context = await _build_comparison_context(
-            name_a, name_b, fields_a, fields_b, url_map,
-        )
+        context = await _build_comparison_context_multi(programs_data, url_map)
 
         log.info(
             "comparison_context_built",
-            program_a=program_a_id,
-            program_b=program_b_id,
-            fields_a_count=len(fields_a),
-            fields_b_count=len(fields_b),
+            program_count=len(program_ids),
+            total_fields=sum(len(p["fields"]) for p in programs_data),
         )
 
-        # 3. Make LLM call (run in thread — synchronous Instructor SDK)
+        # 3. Make LLM call
         client, model_name = _make_client()
-        loop = asyncio.get_running_loop()
-        analysis = await loop.run_in_executor(
-            None,
-            _call_comparator,
-            client,
-            model_name,
-            context,
-            name_a,
-            name_b,
+        
+        prompt = (
+            f"Write a strategic competitive market matrix comparison between the following loyalty programs:\n"
+            f"  {', '.join(program_names)}\n\n"
+            f"{context}\n\n"
+            "Generate the comparison now. For each category, rank the programs from best to worst and write "
+            "a factual, grounded strategic rationale. Use inline (source: <url>) after every single fact statement."
         )
+
+        kwargs: dict = {
+            "response_model": MarketMatrixOutput,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.0,
+        }
+        if model_name and not model_name.startswith("gemini"):
+            kwargs["model"] = model_name
+
+        loop = asyncio.get_running_loop()
+        def _call_llm():
+            res = client.chat.completions.create(**kwargs)
+            return res.model_dump()
+
+        analysis = await loop.run_in_executor(None, _call_llm)
 
         # 4. Persist to comparisons table
+        pid_uuids = [uuid.UUID(p_id) for p_id in program_ids]
         comparison = Comparison(
             id=uuid.uuid4(),
-            program_a_id=pid_a,
-            program_b_id=pid_b,
+            program_a_id=pid_uuids[0],
+            program_b_id=pid_uuids[1] if len(pid_uuids) > 1 else None,
+            program_ids=pid_uuids,
             analysis_json=analysis,
             created_at=datetime.now(timezone.utc),
         )
-        session.add(comparison)
-        await session.flush()
+        db_session.add(comparison)
+        await db_session.flush()
 
         log.info(
             "comparison_done",
-            program_a=program_a_id,
-            program_b=program_b_id,
             comparison_id=str(comparison.id),
+            program_ids=[str(p) for p in pid_uuids],
         )
         return comparison
 
     except Exception as exc:
         log.error(
             "comparison_failed",
-            program_a=program_a_id,
-            program_b=program_b_id,
+            program_ids=program_ids,
             error=str(exc)[:400],
         )
         return None

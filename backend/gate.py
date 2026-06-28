@@ -154,3 +154,58 @@ def gate_verify_batch(
         )
         for field_name, (claimed_value, evidence_quote) in field_extractions.items()
     }
+
+
+def find_best_source_for_quote(
+    evidence_quote: str,
+    url_to_source: dict[str, dict],
+    threshold: float = GATE_THRESHOLD,
+) -> tuple[Optional[str], Optional[str]]:
+    """Scan ALL fetched sources to find where evidence_quote best matches.
+
+    Called by verify_node when the LLM claims a source_url that either
+    doesn't exist in our DB or whose content doesn't pass the gate. This
+    function tries every source, picks the one with the highest partial_ratio,
+    and returns it if it clears the threshold.
+
+    Args:
+        evidence_quote:  The verbatim quote the LLM extracted.
+        url_to_source:   {url: source_dict} mapping for this program.
+        threshold:       Minimum fuzzy-match ratio to accept (default 0.80).
+
+    Returns:
+        (best_url, best_source_id) if any source clears threshold, else (None, None).
+    """
+    if not evidence_quote or not url_to_source:
+        return None, None
+
+    quote_lower = evidence_quote.lower()
+    best_score = 0.0
+    best_url: Optional[str] = None
+    best_id: Optional[str] = None
+
+    for url, src_dict in url_to_source.items():
+        content = src_dict.get("raw_content", "")
+        if not content:
+            continue
+        raw_score = fuzz.partial_ratio(quote_lower, content.lower())
+        score = raw_score / 100.0
+        if score > best_score:
+            best_score = score
+            best_url = url
+            best_id = src_dict.get("id")
+
+    if best_score >= threshold:
+        log.info(
+            "multi_source_match_found",
+            best_url=best_url,
+            score=round(best_score, 3),
+        )
+        return best_url, best_id
+
+    log.debug(
+        "multi_source_no_match",
+        best_score=round(best_score, 3),
+        threshold=threshold,
+    )
+    return None, None

@@ -58,15 +58,6 @@ _QUERIES: dict[str, str] = {
     "competitors": '"{name}" versus competitors review comparison',
 }
 
-# URL patterns that override the query-of-origin classification
-_URL_TYPE_PATTERNS: list[tuple[str, str]] = [
-    (r"apps\.apple\.com|play\.google\.com|appstore", "app_review"),
-    (r"reddit\.com|quora\.com|trustpilot\.com|tripadvisor", "forum"),
-    (r"prnewswire\.com|businesswire\.com|globenewswire|sec\.gov", "press"),
-    (r"terms|conditions|tnc|legal|policy", "tnc"),
-    (r"faq|help\.|support\.|questions", "faq"),
-]
-
 # How many Tavily results to request per query
 _MAX_RESULTS_PER_QUERY = 5
 
@@ -75,6 +66,41 @@ _MAX_FIRECRAWL_FETCHES = 20
 
 # Seconds to sleep between Firecrawl calls (rate-limit courtesy)
 _FIRECRAWL_DELAY = 0.5
+
+# ---------------------------------------------------------------------------
+# Classification tables — ordered priority chains
+# ---------------------------------------------------------------------------
+
+# Priority 1: Trusted domain patterns — near-certain, checked first
+_DOMAIN_PATTERNS: list[tuple[str, str]] = [
+    (r"apps\.apple\.com|play\.google\.com|appstore\.com", "app_review"),
+    (r"reddit\.com|quora\.com|trustpilot\.com|tripadvisor\.com|yelp\.com|glassdoor\.com|flyertalk\.com", "forum"),
+    (r"prnewswire\.com|businesswire\.com|globenewswire\.com|sec\.gov|accesswire\.com", "press"),
+    (r"nerdwallet\.com|thepointsguy\.com|bankrate\.com|creditkarma\.com|forbes\.com", "news"),
+]
+
+# Priority 2: URL path patterns — high confidence (includes .pdf)
+_PATH_PATTERNS: list[tuple[str, str]] = [
+    (r"\.pdf($|\?)|terms|conditions|tnc|legal|policy|rules|agreement", "tnc"),
+    (r"faq|faqs|help\.|support\.|questions|howto|how-to", "faq"),
+    (r"press|newsroom|press-release|ir\.|investor", "press"),
+    (r"review|rating|feedback|app-store", "app_review"),
+]
+
+# Priority 3: Title keywords — medium confidence
+_TITLE_KEYWORDS: dict[str, list[str]] = {
+    "tnc":        ["terms", "conditions", "legal", "policy", "rules", "agreement"],
+    "faq":        ["faq", "frequently asked", "help center", "support", "how to"],
+    "press":      ["press release", "announces", "launches", "expands", "partners with"],
+    "news":       ["review", "guide", "best credit", "comparison", "ranking", "worth it"],
+    "app_review": ["app review", "ios", "android rating", "app store"],
+}
+
+# Priority 4: Snippet keywords — fallback
+_SNIPPET_KEYWORDS: dict[str, list[str]] = {
+    "tnc": ["pursuant to", "herein", "shall not", "termination", "obligations"],
+    "faq": ["how do i", "how to", "can i ", "when will", "what is the"],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -93,12 +119,37 @@ class _Candidate:
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _classify_by_url(url: str, default: str) -> str:
-    """Override source_type classification based on URL patterns."""
+def _classify_source(url: str, title: str, snippet: str, default: str) -> str:
+    """Classify source_type using a four-level priority chain.
+
+    Priority (highest to lowest):
+      1. Trusted domain patterns — near-certain (e.g. reddit.com → forum)
+      2. URL path patterns — high confidence (e.g. /terms, .pdf → tnc)
+      3. Page title keyword matching — medium confidence
+      4. Tavily snippet keyword matching — fallback
+
+    No LLM call: all signal comes from data Tavily already returns.
+    """
     url_lower = url.lower()
-    for pattern, stype in _URL_TYPE_PATTERNS:
+    title_lower = (title or "").lower()
+    snippet_lower = (snippet or "").lower()
+
+    for pattern, stype in _DOMAIN_PATTERNS:
         if re.search(pattern, url_lower):
             return stype
+
+    for pattern, stype in _PATH_PATTERNS:
+        if re.search(pattern, url_lower):
+            return stype
+
+    for stype, keywords in _TITLE_KEYWORDS.items():
+        if any(kw in title_lower for kw in keywords):
+            return stype
+
+    for stype, keywords in _SNIPPET_KEYWORDS.items():
+        if any(kw in snippet_lower for kw in keywords):
+            return stype
+
     return default
 
 
@@ -117,7 +168,8 @@ def _tavily_search(client: TavilyClient, query: str, source_type: str) -> list[_
                 continue
             title = r.get("title", "") or ""
             snippet = r.get("content", "") or ""
-            classified = _classify_by_url(url, source_type)
+            # Use enhanced 4-level classifier (URL domain → path → title → snippet)
+            classified = _classify_source(url, title, snippet, source_type)
             candidates.append(_Candidate(
                 url=url,
                 source_type=classified,
@@ -158,19 +210,36 @@ async def _check_robots(url: str, http: httpx.AsyncClient) -> str:
         return "robots_unverified"
 
 
-def _firecrawl_fetch(app: FirecrawlApp, url: str) -> Optional[str]:
-    """Scrape a URL with Firecrawl. Returns markdown content or None on failure."""
+def _firecrawl_fetch(app: FirecrawlApp, url: str) -> tuple[Optional[str], Optional[str]]:
+    """Scrape a URL with Firecrawl. Returns (markdown, html) in a single API call.
+
+    HTML is used downstream by the extractor for TierSystem table extraction,
+    where markdown destroys column structure. Both formats are requested in one
+    call — no extra Firecrawl credit used.
+
+    Returns:
+        (markdown, html) — either/both may be None on failure or missing format.
+    """
     try:
-        result = app.scrape_url(url, formats=["markdown"])
-        # firecrawl-py >= 1.0 returns an object with .markdown attribute
-        if hasattr(result, "markdown") and result.markdown:
-            return result.markdown
-        # older versions return a dict
+        result = app.scrape_url(url, formats=["markdown", "html"])
+        markdown: Optional[str] = None
+        html: Optional[str] = None
+
+        # firecrawl-py >= 1.0 returns an object with attributes
+        if hasattr(result, "markdown"):
+            markdown = result.markdown or None
+        if hasattr(result, "html"):
+            html = result.html or None
+
+        # Older versions return a dict
         if isinstance(result, dict):
-            return result.get("markdown") or result.get("content") or None
+            markdown = result.get("markdown") or result.get("content") or None
+            html = result.get("html") or None
+
+        return markdown, html
     except Exception as exc:
         log.warning("firecrawl_failed", url=url, error=str(exc)[:200])
-    return None
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -265,23 +334,59 @@ async def discover_sources(
             # Seed fetch_status from robots check so 'robots_unverified' propagates
             fetch_status = "success" if robots_status == "allowed" else robots_status
 
+            raw_html: Optional[str] = None
+
             if firecrawl_count < _MAX_FIRECRAWL_FETCHES and firecrawl_key:
-                markdown = await loop.run_in_executor(
+                markdown, html = await loop.run_in_executor(
                     None, _firecrawl_fetch, firecrawl, candidate.url
                 )
                 firecrawl_count += 1
                 if markdown and len(markdown.strip()) > 50:
                     raw_content = markdown
                     fetch_method = "firecrawl"
-                    # Keep robots_unverified if set; otherwise mark success
                     if fetch_status == "success":
                         fetch_status = "success"
                 else:
-                    # Firecrawl returned nothing useful — keep snippet
                     if fetch_status == "success":
                         fetch_status = "failed"
-                # Polite delay between Firecrawl calls
+                if html:
+                    raw_html = html[:80_000]
                 await asyncio.sleep(_FIRECRAWL_DELAY)
+
+            # --- Scraping Fallback: if Firecrawl failed, try BeautifulSoup ---
+            if fetch_method == "tavily_snippet":
+                log.info("firecrawl_failed_trying_bs4", url=candidate.url)
+                try:
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    }
+                    resp = await http.get(candidate.url, headers=headers, timeout=10.0, follow_redirects=True)
+                    if resp.status_code == 200:
+                        from bs4 import BeautifulSoup
+                        soup = BeautifulSoup(resp.text, "html.parser")
+                        for tag in soup(["script", "style", "nav", "footer", "header"]):
+                            tag.decompose()
+                        
+                        text = soup.get_text(separator="\n")
+                        lines = (line.strip() for line in text.splitlines())
+                        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                        cleaned_text = "\n".join(chunk for chunk in chunks if chunk)
+                        
+                        if len(cleaned_text.strip()) > 100:
+                            raw_content = cleaned_text
+                            raw_html = resp.text[:80_000]
+                            fetch_method = "beautifulsoup"
+                            fetch_status = "success"
+                            log.info("bs4_scraping_fallback_success", url=candidate.url, text_len=len(cleaned_text))
+                        else:
+                            raise ValueError("Extracted text too short")
+                    else:
+                        raise ValueError(f"HTTP Status {resp.status_code}")
+                except Exception as fallback_exc:
+                    log.warning("bs4_scraping_fallback_failed", url=candidate.url, error=str(fallback_exc)[:200])
+                    raw_content = candidate.tavily_snippet
+                    fetch_method = "tavily_snippet"
+                    fetch_status = "degraded_tavily_fallback"
 
             # ----------------------------------------------------------
             # Step 4: Insert into DB (skip if already exists for this program)
@@ -295,6 +400,7 @@ async def discover_sources(
                 content_hash=Source.make_hash(raw_content),
                 fetch_method=fetch_method,
                 fetch_status=fetch_status,
+                raw_html=raw_html,
             )
             db.add(source)
             try:

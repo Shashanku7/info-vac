@@ -20,8 +20,8 @@ from sqlalchemy.exc import IntegrityError
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 
 from backend.db import make_background_session, AsyncSessionLocal
-from backend.extractor import extract_fields, ExtractedSchema
-from backend.gate import gate_verify
+from backend.extractor import extract_fields, ExtractedSchema, retry_failed_fields
+from backend.gate import gate_verify, find_best_source_for_quote
 from backend.models import ExtractedField
 from backend.narrator import generate_narrative
 from backend.retriever import discover_sources
@@ -72,6 +72,7 @@ async def retrieve_node(state: PipelineState) -> PipelineState:
             "url": s.url,
             "source_type": s.source_type,
             "raw_content": (s.raw_content or "")[:50_000],
+            "raw_html": (s.raw_html or "")[:30_000] if s.raw_html else None,
             "fetch_method": s.fetch_method,
             "fetched_at": s.fetched_at.isoformat() if s.fetched_at else None,
         }
@@ -103,44 +104,74 @@ async def embed_node(state: PipelineState) -> PipelineState:
         from backend.qdrant_client import get_qdrant_client, ensure_collection
         from backend.embeddings import chunk_text, embed_texts
         from qdrant_client.http import models
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        import scipy.sparse
         import asyncio, uuid
         
         client = get_qdrant_client()
         ensure_collection(client)
         
-        points = []
+        # 1. Gather all chunks
+        chunk_data = []
         for src in source_dicts:
             raw_text = src.get("raw_content")
             if not raw_text:
                 continue
                 
             chunks = chunk_text(raw_text)
-            if not chunks:
-                continue
+            for chunk_str in chunks:
+                chunk_data.append({"src": src, "text": chunk_str})
                 
-            # Run heavy embeddings in a thread pool so we don't block asyncio event loop
-            loop = asyncio.get_running_loop()
-            vectors = await loop.run_in_executor(None, embed_texts, chunks)
+        if not chunk_data:
+            return {**state, "error": None}
+
+        all_texts = [cd["text"] for cd in chunk_data]
+        
+        # 2. Get dense embeddings in one batch
+        loop = asyncio.get_running_loop()
+        vectors = await loop.run_in_executor(None, embed_texts, all_texts)
+        
+        # 3. Fit local TF-IDF vectorizer for sparse vectors (BM25 replacement)
+        vectorizer = TfidfVectorizer(stop_words='english')
+        try:
+            tfidf_matrix = vectorizer.fit_transform(all_texts)
+        except Exception:
+            tfidf_matrix = scipy.sparse.coo_matrix((len(all_texts), 1))
+
+        # 4. Construct PointStruct list
+        points = []
+        for idx, (cd, vector) in enumerate(zip(chunk_data, vectors)):
+            src = cd["src"]
+            chunk_str = cd["text"]
             
-            for chunk_str, vector in zip(chunks, vectors):
-                points.append(
-                    models.PointStruct(
-                        id=uuid.uuid4().hex,
-                        vector=vector,
-                        payload={
-                            "program_id": program_id,
-                            "source_id": src["id"],
-                            "source_url": src["url"],
-                            "text": chunk_str
-                        }
-                    )
+            row = tfidf_matrix.getrow(idx).tocoo()
+            indices = row.col.tolist()
+            values = row.data.tolist()
+
+            points.append(
+                models.PointStruct(
+                    id=uuid.uuid4().hex,
+                    vector={
+                        "": vector,
+                        "sparse-text": models.SparseVector(
+                            indices=indices,
+                            values=values
+                        )
+                    },
+                    payload={
+                        "program_id": program_id,
+                        "source_id": src["id"],
+                        "source_url": src["url"],
+                        "source_type": src.get("source_type", "homepage"),
+                        "text": chunk_str
+                    }
                 )
-                
+            )
+            
         if points:
             # Upsert in batches
             batch_size = 100
             for i in range(0, len(points), batch_size):
-                # Qdrant client operations are sync in our wrapper
                 await asyncio.get_running_loop().run_in_executor(
                     None, 
                     lambda p=points[i:i+batch_size]: client.upsert(collection_name="sources", points=p)
@@ -149,7 +180,6 @@ async def embed_node(state: PipelineState) -> PipelineState:
     except Exception as exc:
         err = str(exc)[:400]
         log.error("embed_failed", program_id=program_id, error=err)
-        # Do not fail the whole pipeline just because chat embeddings failed
         await emit_event(program_id, "embed_warning", 0.29, f"Vector embedding failed (chat may degrade): {err}")
         
     return state
@@ -177,6 +207,7 @@ async def extract_node(state: PipelineState) -> PipelineState:
             self.url = d["url"]
             self.source_type = d["source_type"]
             self.raw_content = d.get("raw_content", "")
+            self.raw_html = d.get("raw_html")  # HTML tables for TierSystem
 
     proxies = [_Proxy(d) for d in source_dicts]
 
@@ -199,6 +230,40 @@ async def extract_node(state: PipelineState) -> PipelineState:
 
 
 # ---------------------------------------------------------------------------
+# Semantic LLM Judge Helper
+# ---------------------------------------------------------------------------
+
+def _call_llm_judge(field_name: str, value: str, quote: str, context: str) -> bool:
+    """Verify if the quote is semantically present in context, allowing minor formatting differences."""
+    from backend.extractor import _make_client
+    try:
+        client, model_name = _make_client()
+        prompt = (
+            f"You are an automated citation judge.\n"
+            f"Field Name: {field_name}\n"
+            f"Claimed Value: {value}\n"
+            f"Evidence Quote: {quote}\n\n"
+            f"Is this Evidence Quote semantically and factually present in the document text below, "
+            f"even if there are minor spacing, punctuation, or formatting differences?\n"
+            f"Answer with exactly 'YES' or 'NO' and nothing else.\n\n"
+            f"=== DOCUMENT TEXT ===\n"
+            f"{context[:15000]}\n"
+        )
+        kwargs = {
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.0,
+        }
+        if model_name and not model_name.startswith("gemini"):
+            kwargs["model"] = model_name
+
+        res = client.client.chat.completions.create(**kwargs)
+        answer = res.choices[0].message.content.strip().upper()
+        return "YES" in answer
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Node 3: Verify (gate + confidence)
 # ---------------------------------------------------------------------------
 
@@ -206,8 +271,9 @@ async def verify_node(state: PipelineState) -> PipelineState:
     if state.get("error"):
         return state
 
-    program_id = state["program_id"]
-    schema_dict = state.get("extracted_schema") or {}
+    program_id   = state["program_id"]
+    program_name = state["program_name"]
+    schema_dict  = state.get("extracted_schema") or {}
     source_dicts = state["source_dicts"]
     total_sources = len(source_dicts)
 
@@ -216,71 +282,251 @@ async def verify_node(state: PipelineState) -> PipelineState:
     await set_status(program_id, "verifying")
 
     url_to_source = {d["url"]: d for d in source_dicts}
-    field_rows = iter_fields(schema_dict)
+    field_rows    = iter_fields(schema_dict)
+
+    async def run_judge_if_borderline(gate_res, val, quote, content, fnm):
+        if not gate_res.passed and quote and val is not None:
+            if 0.70 <= gate_res.match_score <= 0.94:
+                try:
+                    loop = asyncio.get_running_loop()
+                    is_match = await loop.run_in_executor(
+                        None, _call_llm_judge, fnm, str(val), quote, content
+                    )
+                    if is_match:
+                        log.info("gate_passed_via_llm_judge", field=fnm, score=gate_res.match_score)
+                        gate_res.passed = True
+                        gate_res.matched_value = val
+                        gate_res.rejection_reason = None
+                except Exception as je:
+                    log.error("llm_judge_failed", field=fnm, error=str(je))
+        return gate_res
+
+    # ---- Phase 1: Process every field; auto re-attribute on wrong URL --------
+    #
+    # Each entry: (cat_key, field_name, gate_result, matched_source_id,
+    #              (conf, corr, auth, rec), original_evidence_quote)
+    field_results: list[tuple] = []
+    # Fields that still fail even after multi-source scan → eligible for LLM retry
+    retry_needed: dict[str, list[str]] = {}  # {cat_key: [field_name, ...]}
+
+    for cat_key, field_name, ev_dict in field_rows:
+        value          = ev_dict.get("value")
+        evidence_quote = ev_dict.get("evidence_quote")
+        source_url     = ev_dict.get("source_url")
+
+        # Choose which source content to gate against
+        source_content    = ""
+        matched_source_id: str | None = None
+
+        if source_url and source_url in url_to_source:
+            source_content    = url_to_source[source_url].get("raw_content", "")
+            matched_source_id = url_to_source[source_url].get("id")
+        elif source_dicts:
+            source_content = " ".join(
+                d.get("raw_content", "") for d in source_dicts[:5]
+            )
+
+        gate_result = gate_verify(
+            field_name=f"{cat_key}.{field_name}",
+            claimed_value=value,
+            evidence_quote=evidence_quote,
+            source_raw_content=source_content,
+        )
+        gate_result = await run_judge_if_borderline(
+            gate_result, value, evidence_quote, source_content, f"{cat_key}.{field_name}"
+        )
+
+        # ---- Auto re-attribution: scan ALL sources if gate failed -----------
+        if not gate_result.passed and evidence_quote and value is not None:
+            best_url, best_id = find_best_source_for_quote(
+                evidence_quote, url_to_source
+            )
+            if best_url and best_url != source_url:
+                new_content  = url_to_source[best_url].get("raw_content", "")
+                retry_gate   = gate_verify(
+                    field_name=f"{cat_key}.{field_name}",
+                    claimed_value=value,
+                    evidence_quote=evidence_quote,
+                    source_raw_content=new_content,
+                )
+                retry_gate = await run_judge_if_borderline(
+                    retry_gate, value, evidence_quote, new_content, f"{cat_key}.{field_name}"
+                )
+                if retry_gate.passed:
+                    gate_result       = retry_gate
+                    matched_source_id = best_id
+                    source_url        = best_url
+                    log.info("gate_reattributed",
+                             field=field_name, new_url=best_url)
+
+        # ---- Mark for LLM retry if still failing with a non-null value -----
+        if not gate_result.passed and value is not None:
+            retry_needed.setdefault(cat_key, []).append(field_name)
+
+        # ---- Confidence scoring for gate-passed fields ----------------------
+        conf_num = corr_num = auth_num = rec_num = None
+        if gate_result.passed and value and matched_source_id:
+            src       = url_to_source.get(source_url or "", {})
+            fetched_s = src.get("fetched_at")
+            fetched   = datetime.fromisoformat(fetched_s) if fetched_s else None
+            vr = compute_confidence(
+                [SourceEvidence(matched_source_id,
+                                src.get("source_type", "unknown"),
+                                value, fetched)],
+                total_sources,
+            )
+            conf_num = round(vr.confidence, 4)
+            corr_num = round(vr.corroboration_score, 4)
+            auth_num = round(vr.authority_score, 4)
+            rec_num  = round(vr.recency_score, 4)
+
+        field_results.append((
+            cat_key, field_name, gate_result, matched_source_id,
+            (conf_num, corr_num, auth_num, rec_num), evidence_quote,
+        ))
+
+    # ---- Phase 2: One LLM retry pass for still-failing fields ---------------
+    retry_updates: dict[str, dict[str, dict]] = {}
+    retry_cost = 0.0
+    if retry_needed:
+        class _SrcProxy:
+            def __init__(self, d: dict):
+                self.url         = d["url"]
+                self.source_type = d["source_type"]
+                self.raw_content = d.get("raw_content", "")
+                self.raw_html    = d.get("raw_html")
+
+        proxies = [_SrcProxy(d) for d in source_dicts]
+        loop    = asyncio.get_running_loop()
+        res_tuple = await loop.run_in_executor(
+            None, retry_failed_fields, program_name, proxies, retry_needed
+        )
+        if isinstance(res_tuple, tuple):
+            retry_updates, retry_cost = res_tuple
+        else:
+            retry_updates, retry_cost = res_tuple, 0.0
+
+        log.info("retry_pass_done",
+                 retried=sum(len(v) for v in retry_needed.values()),
+                 categories=list(retry_needed.keys()),
+                 cost_usd=retry_cost)
+
+    # ---- Phase 3: Merge retry results, apply gate, write DB -----------------
     gate_passed_count = gate_rejected_count = 0
 
     async with AsyncSessionLocal() as session:
-        for cat_key, field_name, ev_dict in field_rows:
-            value = ev_dict.get("value")
-            evidence_quote = ev_dict.get("evidence_quote")
-            source_url = ev_dict.get("source_url")
+        for (cat_key, field_name, gate_result, matched_source_id,
+             scores, orig_quote) in field_results:
 
-            # Pick best source to gate against
-            source_content = ""
-            matched_source_id: str | None = None
-            if source_url and source_url in url_to_source:
-                source_content = url_to_source[source_url].get("raw_content", "")
-                matched_source_id = url_to_source[source_url].get("id")
-            elif source_dicts:
-                source_content = " ".join(
-                    d.get("raw_content", "") for d in source_dicts[:5]
+            final_gate   = gate_result
+            final_src_id = matched_source_id
+            final_quote  = orig_quote
+            conf_num, corr_num, auth_num, rec_num = scores
+
+            # Integrate retry result if we got one and original gate failed
+            if (not gate_result.passed
+                    and cat_key in retry_updates
+                    and field_name in retry_updates[cat_key]):
+                rev = retry_updates[cat_key][field_name]
+                rv, rq, ru = (rev.get("value"),
+                              rev.get("evidence_quote"),
+                              rev.get("source_url"))
+
+                r_content = ""
+                r_src_id  = None
+                if ru and ru in url_to_source:
+                    r_content = url_to_source[ru].get("raw_content", "")
+                    r_src_id  = url_to_source[ru].get("id")
+                elif source_dicts:
+                    r_content = " ".join(
+                        d.get("raw_content", "") for d in source_dicts[:5]
+                    )
+
+                r_gate = gate_verify(
+                    field_name=f"{cat_key}.{field_name} [retry]",
+                    claimed_value=rv,
+                    evidence_quote=rq,
+                    source_raw_content=r_content,
                 )
+                if r_gate.passed:
+                    final_gate   = r_gate
+                    final_src_id = r_src_id
+                    final_quote  = rq
+                    # Recompute confidence for retry-sourced value
+                    if rv and r_src_id:
+                        src   = url_to_source.get(ru or "", {})
+                        f_str = src.get("fetched_at")
+                        f_dt  = datetime.fromisoformat(f_str) if f_str else None
+                        vr2   = compute_confidence(
+                            [SourceEvidence(r_src_id,
+                                            src.get("source_type", "unknown"),
+                                            rv, f_dt)],
+                            total_sources,
+                        )
+                        conf_num = round(vr2.confidence, 4)
+                        corr_num = round(vr2.corroboration_score, 4)
+                        auth_num = round(vr2.authority_score, 4)
+                        rec_num  = round(vr2.recency_score, 4)
+                    log.info("retry_gate_passed",
+                             field=field_name, category=cat_key)
 
-            gate_result = gate_verify(
-                field_name=f"{cat_key}.{field_name}",
-                claimed_value=value,
-                evidence_quote=evidence_quote,
-                source_raw_content=source_content,
-            )
-            if gate_result.passed:
+            # Compute citation character offsets if passed
+            c_start = None
+            c_end = None
+            access_dt = None
+            if final_gate.passed and final_quote and final_src_id:
+                src_dict = None
+                for s_d in source_dicts:
+                    if s_d.get("id") == final_src_id:
+                        src_dict = s_d
+                        break
+                if src_dict:
+                    src_content = src_dict.get("raw_content", "")
+                    idx = src_content.find(final_quote)
+                    if idx == -1:
+                        idx = src_content.lower().find(final_quote.lower())
+                    if idx != -1:
+                        c_start = idx
+                        c_end = idx + len(final_quote)
+                    
+                    f_str = src_dict.get("fetched_at")
+                    if f_str:
+                        try:
+                            access_dt = datetime.fromisoformat(f_str)
+                        except Exception:
+                            pass
+
+            if final_gate.passed:
                 gate_passed_count += 1
             else:
                 gate_rejected_count += 1
-
-            # Compute confidence for non-null gate-passed fields
-            conf_num = corr_num = auth_num = rec_num = None
-            if gate_result.passed and value and matched_source_id:
-                src = url_to_source.get(source_url or "", {})
-                fetched_str = src.get("fetched_at")
-                fetched_at = (
-                    datetime.fromisoformat(fetched_str) if fetched_str else None
+                # Log forced null in analytics
+                log.info(
+                    "analytics_null_forced",
+                    program_id=program_id,
+                    category=cat_key,
+                    field=field_name,
+                    reason="gate_failed",
                 )
-                vr = compute_confidence(
-                    [SourceEvidence(matched_source_id,
-                                    src.get("source_type", "unknown"),
-                                    value, fetched_at)],
-                    total_sources,
-                )
-                conf_num = round(vr.confidence, 4)
-                corr_num = round(vr.corroboration_score, 4)
-                auth_num = round(vr.authority_score, 4)
-                rec_num  = round(vr.recency_score, 4)
 
             row = ExtractedField(
                 id=uuid.uuid4(),
                 program_id=uuid.UUID(program_id),
                 category=cat_key,
                 field_name=field_name,
-                field_value=gate_result.matched_value,
-                is_null=(gate_result.matched_value is None),
-                claimed_snippet=evidence_quote,
-                gate_passed=gate_result.passed,
-                match_score=round(gate_result.match_score, 4),
+                field_value=final_gate.matched_value,
+                is_null=(final_gate.matched_value is None),
+                claimed_snippet=final_quote,
+                gate_passed=final_gate.passed,
+                match_score=round(final_gate.match_score, 4),
+                citation_start=c_start,
+                citation_end=c_end,
                 corroboration_score=corr_num,
                 authority_score=auth_num,
                 recency_score=rec_num,
                 confidence=conf_num,
-                source_id=(uuid.UUID(matched_source_id) if matched_source_id else None),
+                source_id=(uuid.UUID(final_src_id) if final_src_id else None),
+                access_date=access_dt,
             )
             session.add(row)
             try:
@@ -289,11 +535,24 @@ async def verify_node(state: PipelineState) -> PipelineState:
                 await session.rollback()
                 log.debug("field_upsert_skipped", field=field_name)
 
+        # Update program's total_cost
+        from backend.models import Program
+        from decimal import Decimal
+        program = await session.get(Program, uuid.UUID(program_id))
+        if program:
+            ext_cost = Decimal(str(schema_dict.get("extraction_cost", 0.0) or 0.0))
+            ret_cost = Decimal(str(retry_cost))
+            program.total_cost = (program.total_cost or Decimal("0.0")) + ext_cost + ret_cost
+
         await session.commit()
 
+    retry_note = (
+        f" ({sum(len(v) for v in retry_needed.values())} LLM-retried)"
+        if retry_needed else ""
+    )
     await emit_event(program_id, "verified", 0.80,
                      f"Gate: {gate_passed_count} passed, "
-                     f"{gate_rejected_count} rejected")
+                     f"{gate_rejected_count} rejected{retry_note}")
     return {**state, "error": None}
 
 

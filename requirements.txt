@@ -58,5 +58,4 @@ black
 qdrant-client
 sentence-transformers
 langchain-text-splitters
-gptqmodel
 torchvision

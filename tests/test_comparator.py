@@ -2,14 +2,6 @@
 
 Fast tests: no @pytest.mark.live, no real DB, no real API calls.
 All LLM and DB interactions are mocked.
-
-Tests:
-  1. test_only_gate_passed_in_context       — rejected/null fields excluded from context block
-  2. test_both_programs_present_in_context  — context block contains data from both programs
-  3. test_comparison_stored_in_db           — compare_programs() adds Comparison to session
-  4. test_system_prompt_contains_grounding  — system prompt forbids training-data usage
-  5. test_llm_failure_returns_none          — Instructor raising returns None gracefully
-  6. test_empty_program_handled             — if one program has no fields, comparison still works
 """
 from __future__ import annotations
 
@@ -19,10 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.comparator import (
-    ComparisonOutput,
+    MarketMatrixOutput,
     _SYSTEM_PROMPT,
-    _build_comparison_context,
-    _call_comparator,
+    _build_comparison_context_multi,
     compare_programs,
 )
 
@@ -50,34 +41,24 @@ def _make_field(
 
 
 def _make_comparison_output() -> dict:
-    """Return a valid ComparisonOutput as dict for mocking."""
+    """Return a valid MarketMatrixOutput as dict for mocking."""
     return {
         "executive_summary": "Program A is stronger overall.",
-        "advantages_a": [
-            {"area": "Earn Mechanics", "description": "Higher base rate (source: https://a.com)"}
-        ],
-        "advantages_b": [
-            {"area": "Digital Experience", "description": "Better app (source: https://b.com)"}
-        ],
-        "key_differences": [
+        "matrix": [
             {
-                "category": "Tier System",
-                "program_a_value": "3 tiers",
-                "program_b_value": "5 tiers",
-                "analysis": "B has more tiers (source: https://b.com)",
+                "category": "Earn Mechanics",
+                "rankings": ["Program A", "Program B"],
+                "rationale": "A has higher base rate (source: https://a.com)"
             }
         ],
-        "gaps": ["Program A lacks gamification data"],
-        "strategic_recommendation": "Program A is recommended for value seekers.",
+        "strategic_recommendations": "Program A is recommended for value seekers.",
     }
 
 
 def _make_client_stub(analysis_dict: dict):
-    """Return a (client, model_name) tuple where client returns a ComparisonOutput."""
+    """Return a (client, model_name) tuple where client returns a MarketMatrixOutput."""
     result = MagicMock()
-    # Set attributes from the dict so model_dump() works
     result.model_dump.return_value = analysis_dict
-    # Also set it up so Instructor's create returns this
     client = MagicMock()
     client.chat.completions.create.return_value = result
     return client, "stub-model"
@@ -94,10 +75,11 @@ async def test_only_gate_passed_in_context():
     rejected = _make_field("bonus_categories", "5x on dining", gate_passed=False, is_null=False)
     null_field = _make_field("earn_cap", None, gate_passed=True, is_null=True)
 
-    context = await _build_comparison_context(
-        "Program A", "Program B",
-        [good, rejected, null_field],  # A's fields
-        [good],                         # B's fields
+    context = await _build_comparison_context_multi(
+        [
+            {"name": "Program A", "fields": [good, rejected, null_field]},
+            {"name": "Program B", "fields": [good]}
+        ],
         {},
     )
 
@@ -116,13 +98,16 @@ async def test_both_programs_present_in_context():
     field_a = _make_field("base_earn_rate", "2 points per $1", category="earn_mechanics")
     field_b = _make_field("base_earn_rate", "3 points per $1", category="earn_mechanics")
 
-    context = await _build_comparison_context(
-        "Starbucks Rewards", "Delta SkyMiles",
-        [field_a], [field_b], {},
+    context = await _build_comparison_context_multi(
+        [
+            {"name": "Starbucks Rewards", "fields": [field_a]},
+            {"name": "Delta SkyMiles", "fields": [field_b]}
+        ],
+        {},
     )
 
-    assert "PROGRAM A: Starbucks Rewards" in context
-    assert "PROGRAM B: Delta SkyMiles" in context
+    assert "PROGRAM: Starbucks Rewards" in context
+    assert "PROGRAM: Delta SkyMiles" in context
     assert "2 points per $1" in context
     assert "3 points per $1" in context
 
@@ -190,7 +175,7 @@ async def test_comparison_stored_in_db():
 
         loop.run_in_executor = fake_executor
 
-        comparison = await compare_programs(program_a_id, program_b_id, session)
+        comparison = await compare_programs([program_a_id, program_b_id], session)
 
     assert comparison is not None
     session.add.assert_called_once()
@@ -239,7 +224,7 @@ async def test_llm_failure_returns_none():
 
     # _make_client raises to simulate LLM failure
     with patch("backend.comparator._make_client", side_effect=RuntimeError("LLM unavailable")):
-        result = await compare_programs(program_a_id, program_b_id, session)
+        result = await compare_programs([program_a_id, program_b_id], session)
 
     assert result is None
 
@@ -253,14 +238,15 @@ async def test_empty_program_handled():
     """If one program has no extracted fields, context still builds without crash."""
     field_a = _make_field("base_earn_rate", "2 points per $1", category="earn_mechanics")
 
-    context = await _build_comparison_context(
-        "Program A", "Program B",
-        [field_a],  # A has data
-        [],          # B has no data
+    context = await _build_comparison_context_multi(
+        [
+            {"name": "Program A", "fields": [field_a]},
+            {"name": "Program B", "fields": []}
+        ],
         {},
     )
 
-    assert "PROGRAM A: Program A" in context
-    assert "PROGRAM B: Program B" in context
+    assert "PROGRAM: Program A" in context
+    assert "PROGRAM: Program B" in context
     assert "No verified data available" in context
     assert "base_earn_rate" in context

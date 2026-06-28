@@ -26,6 +26,7 @@ class Program(Base):
     )
     completed_at = Column(DateTime(timezone=True), nullable=True)
     error_message = Column(Text, nullable=True)
+    total_cost = Column(Numeric(8, 4), nullable=False, default=0.0)  # Total LLM usage cost in USD
 
     sources = relationship("Source", back_populates="program", cascade="all, delete-orphan")
 
@@ -53,6 +54,7 @@ class Source(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
     fetch_status = Column(String(20), nullable=False, default="success")  # success|failed|blocked
+    raw_html = Column(Text, nullable=True)   # HTML tables for TierSystem extraction (Firecrawl only)
 
     program = relationship("Program", back_populates="sources")
 
@@ -84,6 +86,8 @@ class ExtractedField(Base):
     claimed_snippet = Column(Text, nullable=True)
     gate_passed = Column(Boolean, nullable=True)
     match_score = Column(Numeric(4, 3), nullable=True)
+    citation_start = Column(Integer, nullable=True)  # Start char offset of quote in source content
+    citation_end = Column(Integer, nullable=True)    # End char offset of quote in source content
 
     # Confidence sub-scores (Phase 3 only)
     corroboration_score = Column(Numeric(3, 2), nullable=True)
@@ -99,9 +103,15 @@ class ExtractedField(Base):
     created_at = Column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
-
-    __table_args__ = (UniqueConstraint("program_id", "field_name", name="uq_field_program_name"),)
-
+    @classmethod
+    def get_latest_only(cls, fields: list[ExtractedField]) -> list[ExtractedField]:
+        """Filters a list of ExtractedField objects, keeping only the latest run for each field_name."""
+        latest = {}
+        for f in fields:
+            existing = latest.get(f.field_name)
+            if not existing or f.created_at > existing.created_at:
+                latest[f.field_name] = f
+        return list(latest.values())
 
 class PipelineEvent(Base):
     """Progress event row — INSERT triggers pg_notify for SSE clients."""
@@ -148,11 +158,12 @@ class Comparison(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     program_a_id = Column(
-        UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("programs.id"), nullable=True
     )
     program_b_id = Column(
-        UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("programs.id"), nullable=True
     )
+    program_ids = Column(JSONB, nullable=True) # new column to support 3+ programs list
     analysis_json = Column(JSONB, nullable=False)
     created_at = Column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
