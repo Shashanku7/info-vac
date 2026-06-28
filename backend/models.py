@@ -1,3 +1,4 @@
+from __future__ import annotations
 """SQLAlchemy ORM models — Phase 1-6: Program, Source, ExtractedField, PipelineEvent, Narrative, Comparison."""
 import hashlib
 import uuid
