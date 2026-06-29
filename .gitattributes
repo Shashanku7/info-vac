@@ -1,0 +1,5 @@
+# Mark Graphify outputs and other visualization files as generated
+# This tells GitHub's Linguist to exclude them from the language statistics
+graphify-out/** linguist-generated
+*.html linguist-generated
+*.json linguist-generated
