@@ -8,6 +8,7 @@ import { searchPrograms } from "@/lib/api";
 import type { Program } from "@/types/api";
 
 interface ProgramInputProps {
+  initialValue?: string;
   onSubmit: (name: string) => void;
   onSelectExisting?: (program: Program) => void;
   isLoading?: boolean;
@@ -28,8 +29,13 @@ function formatRelative(isoDate: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-export function ProgramInput({ onSubmit, onSelectExisting, isLoading = false }: ProgramInputProps) {
-  const [value, setValue] = useState("");
+export function ProgramInput({ initialValue = "", onSubmit, onSelectExisting, isLoading = false }: ProgramInputProps) {
+  const [value, setValue] = useState(initialValue);
+
+  // Sync value when initialValue changes (e.g. program loads)
+  useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
   const [suggestions, setSuggestions] = useState<Program[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);

@@ -44,6 +44,8 @@ export default function AnalystWorkspace() {
     }
   }, [programId, isMounted]);
 
+  const [searchQuery, setSearchQuery] = useState("");
+
   const {
     phase,
     program,
@@ -59,6 +61,13 @@ export default function AnalystWorkspace() {
     sendMessage,
     reset,
   } = useProgram(programId);
+
+  // Sync searchQuery when the loaded program changes (e.g. initial load from localStorage or fetch completes)
+  useEffect(() => {
+    if (program?.name) {
+      setSearchQuery(program.name);
+    }
+  }, [program?.name]);
 
   const handleComplete = useCallback(async () => {
     if (programId) await onPipelineComplete(programId);
@@ -76,6 +85,7 @@ export default function AnalystWorkspace() {
   );
 
   async function handleSubmit(name: string) {
+    setSearchQuery(name);
     // Search for similar completed programs first
     const matches = await searchPrograms(name);
     if (matches.length > 0) {
@@ -89,6 +99,7 @@ export default function AnalystWorkspace() {
 
   /** Load a specific existing completed program (user chose from modal) */
   async function handleSelectExisting(prog: Program) {
+    setSearchQuery(prog.name);
     setPendingSearch(null);
     reset();
     setTrackerExpanded(false);
@@ -106,6 +117,7 @@ export default function AnalystWorkspace() {
 
   /** Internal: create a new pending program and start the pipeline */
   async function launchFresh(name: string) {
+    setSearchQuery(name);
     reset();
     setProgramId(null);
     setTrackerExpanded(true);
@@ -122,6 +134,7 @@ export default function AnalystWorkspace() {
   async function handleForceReanalyse() {
     const currentName = program?.name;
     if (!currentName) return;
+    setSearchQuery(currentName);
     reset();
     setProgramId(null);
     setTrackerExpanded(true);
@@ -183,6 +196,7 @@ export default function AnalystWorkspace() {
           )}
           <ProgramInput
             key={programId ?? "new"}
+            initialValue={searchQuery}
             onSubmit={handleSubmit}
             onSelectExisting={handleSelectExisting}
             isLoading={isRunning}
