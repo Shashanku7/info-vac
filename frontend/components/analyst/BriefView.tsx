@@ -1,73 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 import type { Narrative, ExtractedField } from "@/types/api";
+import {
+  parseNarrative,
+  splitNarrativeSegments,
+  type ParsedReference,
+} from "@/lib/narrative";
 
 interface BriefViewProps {
   narrative: Narrative;
   fields: ExtractedField[];
+  /** Pre-computed references — if provided, skips re-parsing (pass from parent for PDF/UI sync) */
+  parsedRefs?: ParsedReference[];
 }
 
-/**
- * Parses (source: https://...) citations from narrator output.
- * Returns:
- *   - parts: React nodes with [N] superscript buttons replacing raw citations
- *   - urlMap: ordered Map<url, refNumber>
- */
-function parseBriefWithSuperscripts(
-  text: string,
-  onCiteClick: (url: string) => void
-): { parts: React.ReactNode[]; urlMap: Map<string, number> } {
-  const urlMap = new Map<string, number>();
-  let counter = 1;
-
-  // First pass — collect unique URLs in order of appearance
-  const urlRegex = /\(source:\s*(https?:\/\/[^\s)]+)\)/g;
-  let m: RegExpExecArray | null;
-  while ((m = urlRegex.exec(text)) !== null) {
-    if (!urlMap.has(m[1])) urlMap.set(m[1], counter++);
-  }
-
-  // Second pass — split and replace with superscript [N] buttons
-  const parts: React.ReactNode[] = [];
-  const splitRegex = /\(source:\s*(https?:\/\/[^\s)]+)\)/g;
-  let lastIndex = 0;
-  let partIndex = 0;
-
-  splitRegex.lastIndex = 0;
-  while ((m = splitRegex.exec(text)) !== null) {
-    if (m.index > lastIndex) {
-      parts.push(
-        <span key={`t-${partIndex++}`}>{text.slice(lastIndex, m.index)}</span>
-      );
-    }
-    const url = m[1];
-    const num = urlMap.get(url) ?? 0;
-    parts.push(
-      <button
-        key={`ref-${partIndex++}`}
-        onClick={() => onCiteClick(url)}
-        className="inline-flex items-center justify-center text-[9px] font-bold text-[#0F766E] hover:text-white bg-transparent hover:bg-[#0F766E] border border-[#0F766E] rounded px-1 py-0 leading-none align-super mx-0.5 transition-colors"
-        title={url}
-      >
-        {num}
-      </button>
-    );
-    lastIndex = splitRegex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push(<span key={`t-${partIndex++}`}>{text.slice(lastIndex)}</span>);
-  }
-
-  return { parts, urlMap };
-}
-
-/** Render paragraphs and headings from markdown-like text with citation badges */
+/** Render paragraphs and headings from the narrative text, with inline [N] citation buttons */
 function renderParagraphs(
   text: string,
+  urlMap: Map<string, number>,
   onCiteClick: (url: string) => void
 ): React.ReactNode[] {
   const paragraphs = text.split(/\n{2,}/);
@@ -92,91 +46,70 @@ function renderParagraphs(
       );
     }
 
-    const { parts } = parseBriefWithSuperscripts(trimmed, onCiteClick);
+    const segments = splitNarrativeSegments(trimmed, urlMap);
     return (
       <p key={i} className="text-sm text-stone-700 leading-[1.75] mb-3">
-        {parts}
+        {segments.map((seg, j) =>
+          seg.type === "text" ? (
+            <span key={j}>{seg.text}</span>
+          ) : (
+            <button
+              key={j}
+              onClick={() => seg.url && onCiteClick(seg.url)}
+              className="inline-flex items-center justify-center text-[9px] font-bold text-[#0F766E] hover:text-white bg-transparent hover:bg-[#0F766E] border border-[#0F766E] rounded px-1 py-0 leading-none align-super mx-0.5 transition-colors"
+              title={seg.url}
+            >
+              {seg.num}
+            </button>
+          )
+        )}
       </p>
     );
   });
 }
 
-/** Render a References section at the bottom, matching academic style */
 function ReferencesSection({
-  urlMap,
-  fields,
+  references,
   onRefClick,
 }: {
-  urlMap: Map<string, number>;
-  fields: ExtractedField[];
+  references: ParsedReference[];
   onRefClick: (url: string) => void;
 }) {
-  if (urlMap.size === 0) return null;
-
-  // Invert the map for sorted output: number → url
-  const entries = Array.from(urlMap.entries()).sort((a, b) => a[1] - b[1]);
+  if (references.length === 0) return null;
 
   return (
     <div id="references-section" className="mt-10 pt-6 border-t-2 border-stone-200">
       <h2 className="text-sm font-semibold text-stone-800 mb-4 uppercase tracking-wide">References</h2>
       <ol className="space-y-5 list-none">
-        {entries.map(([url, num]) => {
-          // Find the field that matched this source URL
-          const matchedField = fields.find(
-            (f) =>
-              f.claimed_snippet != null &&
-              // match by source_id or fall back to any field with a snippet
-              f.claimed_snippet.length > 0
-          ) ?? null;
-
-          const accessDate = matchedField?.access_date
-            ? new Date(matchedField.access_date).toLocaleDateString("en-GB", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })
-            : null;
-
-          const snippet = matchedField?.claimed_snippet
-            ? matchedField.claimed_snippet.slice(0, 200) +
-              (matchedField.claimed_snippet.length > 200 ? "…" : "")
-            : null;
+        {references.map((ref) => {
+          const displayDate = ref.accessDate ?? "—";
 
           return (
-            <li key={url} id={`ref-${num}`} className="flex items-start gap-3">
-              {/* Number */}
+            <li key={ref.url} id={`ref-${ref.num}`} className="flex items-start gap-3">
               <span className="text-[11px] font-bold text-[#0F766E] shrink-0 mt-0.5 w-6 text-right">
-                [{num}]
+                [{ref.num}]
               </span>
-
-              {/* Details */}
               <div className="flex-1 space-y-1">
-                {/* Source URL */}
                 <div className="flex items-start gap-1.5">
                   <span className="text-[11px] text-stone-500 shrink-0 font-medium w-28">Source</span>
                   <button
-                    onClick={() => onRefClick(url)}
-                    className="text-[11px] text-[#0F766E] hover:underline text-left break-all transition-colors"
+                    onClick={() => onRefClick(ref.url)}
+                    className="text-[11px] text-[#0F766E] hover:underline text-left break-all transition-colors flex items-center gap-1"
                     title="View evidence"
                   >
-                    {url}
+                    {ref.url}
+                    <ExternalLink size={9} className="shrink-0 opacity-50" />
                   </button>
                 </div>
-
-                {/* Evidence Quote */}
                 <div className="flex items-start gap-1.5">
                   <span className="text-[11px] text-stone-500 shrink-0 font-medium w-28">Evidence Quote</span>
                   <span className="text-[11px] text-stone-600 italic leading-relaxed">
-                    {snippet ? `"${snippet}"` : "—"}
+                    {ref.snippet ? `"${ref.snippet}"` : "—"}
                   </span>
                 </div>
-
-                {/* Access Date */}
                 <div className="flex items-start gap-1.5">
                   <span className="text-[11px] text-stone-500 shrink-0 font-medium w-28">Access Date</span>
-                  <span className="text-[11px] text-stone-600">
-                    {accessDate ?? "—"}
-                  </span>
+                  <span className="text-[11px] text-stone-600">{displayDate}</span>
                 </div>
               </div>
             </li>
@@ -187,33 +120,36 @@ function ReferencesSection({
   );
 }
 
-export function BriefView({ narrative, fields }: BriefViewProps) {
+export function BriefView({ narrative, fields, parsedRefs }: BriefViewProps) {
   const [copied, setCopied] = useState(false);
   const [drawerUrl, setDrawerUrl] = useState<string | null>(null);
 
+  // Single source of truth: use pre-parsed refs if parent provided them, otherwise parse here
+  const { urlMap, references } = parsedRefs
+    ? (() => {
+        // Rebuild urlMap from parsedRefs so we can render inline citations
+        const m = new Map<string, number>();
+        parsedRefs.forEach((r) => m.set(r.url, r.num));
+        return { urlMap: m, references: parsedRefs };
+      })()
+    : parseNarrative(narrative.narrative, fields);
+
+  const drawerField = drawerUrl
+    ? fields.find(
+        (f) => f.source_url === drawerUrl && f.claimed_snippet != null && f.claimed_snippet.length > 0
+      ) ?? null
+    : null;
+
   function handleCopy() {
-    // Export clean text (strip raw citation annotations)
-    const clean = narrative.narrative.replace(
-      /\(source:\s*https?:\/\/[^\s)]+\)/g,
-      ""
-    );
+    const clean = narrative.narrative.replace(/\(source:\s*https?:\/\/[^\s)]+\)/g, "");
     navigator.clipboard.writeText(clean);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
-  // Collect all unique URLs from narrative in order for references
-  const { urlMap } = parseBriefWithSuperscripts(narrative.narrative, () => {});
-
-  // Find matching field for evidence drawer
-  const drawerField = drawerUrl
-    ? fields.find((f) => f.claimed_snippet != null) ?? null
-    : null;
-
   return (
     <>
       <div className="relative">
-        {/* Header row */}
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-base font-semibold text-stone-900">Analyst Brief</h2>
@@ -240,13 +176,11 @@ export function BriefView({ narrative, fields }: BriefViewProps) {
           </Button>
         </div>
 
-        {/* Body */}
         <div className="prose-container">
-          {renderParagraphs(narrative.narrative, setDrawerUrl)}
+          {renderParagraphs(narrative.narrative, urlMap, setDrawerUrl)}
         </div>
 
-        {/* References section */}
-        <ReferencesSection urlMap={urlMap} fields={fields} onRefClick={setDrawerUrl} />
+        <ReferencesSection references={references} onRefClick={setDrawerUrl} />
       </div>
 
       <EvidenceDrawer

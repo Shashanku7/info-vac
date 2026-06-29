@@ -63,6 +63,7 @@ export function useProgram(programId: string | null): UseProgramReturn {
       return;
     }
 
+    setPhase("running");
     getProgram(programId)
       .then(async (prog) => {
         setProgram(prog);

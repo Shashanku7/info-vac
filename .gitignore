@@ -58,7 +58,12 @@ Thumbs.db
 # ── Scratch / temp outputs ────────────────────────────────────────────────────
 temp/
 scratch/
+dumps/
 phase*_output.txt
 starbucks_raw_markdown.txt
 all_starbucks_markdown.txt
 real_outputs.txt
+
+# ── Graphify local files ──────────────────────────────────────────────────────
+graphify-out/cache/
+graphify-out/cost.json

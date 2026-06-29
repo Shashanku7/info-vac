@@ -346,67 +346,76 @@ async def discover_sources(
     log.info("retriever_start", program=program_name)
 
     # ------------------------------------------------------------------
-    # Step 1: Tavily discovery — run all queries in a thread pool
+    # Step 1: Tavily discovery — run all queries concurrently with timeouts
     # ------------------------------------------------------------------
     all_candidates: list[_Candidate] = []
+    seen_urls: dict[str, _Candidate] = {}
+    unique_candidates: list[_Candidate] = []
 
     loop = asyncio.get_event_loop()
     tasks = []
     for source_type, query_template in _QUERIES.items():
         query = query_template.format(name=program_name)
-        tasks.append(
-            loop.run_in_executor(None, _tavily_search, tavily_keys, query, source_type)
+        task = asyncio.wait_for(
+            loop.run_in_executor(None, _tavily_search, tavily_keys, query, source_type),
+            timeout=25.0
         )
+        tasks.append(task)
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for result in results:
-        if isinstance(result, Exception):
-            log.warning("tavily_task_failed", error=str(result))
-            continue
-        all_candidates.extend(result)
-
-    log.info("tavily_done", total_candidates=len(all_candidates))
-
-    # ------------------------------------------------------------------
-    # Step 2: Deduplicate by URL, keep first occurrence (highest Tavily score)
-    # ------------------------------------------------------------------
-    seen_urls: dict[str, _Candidate] = {}
-    for c in all_candidates:
-        if c.url not in seen_urls:
-            seen_urls[c.url] = c
-
-    unique_candidates = list(seen_urls.values())
-    log.info("after_dedup", unique_count=len(unique_candidates))
-
-    # Stream unique candidate pages discovered
     from orchestrator.events import emit_event
     import json
-    for idx, c in enumerate(unique_candidates):
-        item = {
-            "title": c.title or "",
-            "url": c.url,
-            "snippet": c.tavily_snippet or "",
-            "domain": c.url.split("/")[2] if "//" in c.url else c.url
-        }
-        await emit_event(
-            str(program_id),
-            "discovering_sources",
-            0.05 + 0.10 * ((idx + 1) / len(unique_candidates)) if unique_candidates else 0.15,
-            json.dumps({"item": item, "count": idx + 1})
-        )
+
+    # Stream results as they complete
+    completed_tasks = 0
+    total_tasks = len(tasks)
+    
+    for f in asyncio.as_completed(tasks):
+        try:
+            candidates_batch = await f
+            completed_tasks += 1
+            for c in candidates_batch:
+                all_candidates.append(c)
+                if c.url not in seen_urls:
+                    seen_urls[c.url] = c
+                    unique_candidates.append(c)
+                    
+                    item = {
+                        "title": c.title or "",
+                        "url": c.url,
+                        "snippet": c.tavily_snippet or "",
+                        "domain": c.url.split("/")[2] if "//" in c.url else c.url
+                    }
+                    await emit_event(
+                        str(program_id),
+                        "discovering_sources",
+                        0.05 + 0.10 * (completed_tasks / total_tasks),
+                        json.dumps({"item": item, "count": len(unique_candidates)})
+                    )
+        except asyncio.TimeoutError:
+            completed_tasks += 1
+            log.warning("tavily_query_timeout")
+        except Exception as exc:
+            completed_tasks += 1
+            log.warning("tavily_task_failed", error=str(exc))
+
+    log.info("tavily_done", total_candidates=len(all_candidates), unique_count=len(unique_candidates))
 
     if not unique_candidates:
         log.info("no_sources_found", program=program_name)
         return []
 
     # ------------------------------------------------------------------
-    # Step 3: Robots.txt check + Firecrawl fetch
+    # Step 3: Robots.txt check + Firecrawl fetch (Concurrent)
     # ------------------------------------------------------------------
     stored: list[Source] = []
     firecrawl_count = 0
+    fc_lock = asyncio.Lock()
+    db_lock = asyncio.Lock()
+    sem = asyncio.Semaphore(10)
 
-    async with httpx.AsyncClient(headers={"User-Agent": "InfoVac/1.0 (+https://github.com/Hrishikesh-Prasad-R/info-vac)"}) as http:
-        for idx, candidate in enumerate(unique_candidates):
+    async def process_candidate(idx: int, candidate: _Candidate, http: httpx.AsyncClient):
+        nonlocal firecrawl_count
+        async with sem:
             # Emit crawling started event
             start_item = {
                 "url": candidate.url,
@@ -427,17 +436,13 @@ async def discover_sources(
                 })
             )
 
-            # Robots check — returns 'allowed' | 'blocked' | 'robots_unverified'
             robots_status = await _check_robots(candidate.url, http)
             if robots_status == "blocked":
                 log.info("robots_blocked", url=candidate.url)
-                # Emit crawl failure event before continuing
-                status_str = "failed"
-                reason_str = "Robots blocked"
                 item = {
                     "url": candidate.url,
-                    "status": status_str,
-                    "reason": reason_str,
+                    "status": "failed",
+                    "reason": "Robots blocked",
                     "title": candidate.title or "",
                     "domain": candidate.url.split("/")[2] if "//" in candidate.url else candidate.url
                 }
@@ -446,28 +451,25 @@ async def discover_sources(
                     str(program_id),
                     "crawling_sources",
                     progress_val_fin,
-                    json.dumps({
-                        "item": item,
-                        "count": idx + 1,
-                        "total": len(unique_candidates)
-                    })
+                    json.dumps({"item": item, "count": idx + 1, "total": len(unique_candidates)})
                 )
-                continue
-            # 'robots_unverified' → proceed but stamp fetch_status below (Decision #1-D)
+                return
 
-            # Firecrawl fetch (up to _MAX_FIRECRAWL_FETCHES)
-            raw_content: str = candidate.tavily_snippet  # guaranteed fallback
+            raw_content: str = candidate.tavily_snippet
             fetch_method = "tavily_snippet"
-            # Seed fetch_status from robots check so 'robots_unverified' propagates
             fetch_status = "success" if robots_status == "allowed" else robots_status
-
             raw_html: Optional[str] = None
 
-            if firecrawl_count < _MAX_FIRECRAWL_FETCHES and firecrawl_keys:
+            use_firecrawl = False
+            async with fc_lock:
+                if firecrawl_count < _MAX_FIRECRAWL_FETCHES and firecrawl_keys:
+                    use_firecrawl = True
+                    firecrawl_count += 1
+            
+            if use_firecrawl:
                 markdown, html = await loop.run_in_executor(
                     None, _firecrawl_fetch, firecrawl_keys, candidate.url
                 )
-                firecrawl_count += 1
                 if markdown and len(markdown.strip()) > 50:
                     raw_content = markdown
                     fetch_method = "firecrawl"
@@ -480,7 +482,6 @@ async def discover_sources(
                     raw_html = html[:80_000]
                 await asyncio.sleep(_FIRECRAWL_DELAY)
 
-            # --- Scraping Fallback: if Firecrawl failed, try BeautifulSoup ---
             if fetch_method == "tavily_snippet":
                 log.info("firecrawl_failed_trying_bs4", url=candidate.url)
                 try:
@@ -493,12 +494,10 @@ async def discover_sources(
                         soup = BeautifulSoup(resp.content, "html.parser")
                         for tag in soup(["script", "style", "nav", "footer", "header"]):
                             tag.decompose()
-                        
                         text = soup.get_text(separator="\n")
                         lines = (line.strip() for line in text.splitlines())
                         chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
                         cleaned_text = "\n".join(chunk for chunk in chunks if chunk)
-                        
                         if len(cleaned_text.strip()) > 100:
                             raw_content = cleaned_text
                             raw_html = resp.text[:80_000]
@@ -515,13 +514,9 @@ async def discover_sources(
                     fetch_method = "tavily_snippet"
                     fetch_status = "tavily_fallback"
 
-            # Clean mojibake from crawled title and content before writing to DB (Problem 1)
             raw_content_cleaned = clean_utf8_mojibake(raw_content)
             title_cleaned = clean_utf8_mojibake(candidate.title) if candidate.title else None
 
-            # ----------------------------------------------------------
-            # Step 4: Insert into DB (skip if already exists for this program)
-            # ----------------------------------------------------------
             source = Source(
                 program_id=program_id,
                 url=candidate.url,
@@ -533,28 +528,18 @@ async def discover_sources(
                 fetch_status=fetch_status,
                 raw_html=raw_html,
             )
-            db.add(source)
-            try:
-                await db.flush()  # catch UniqueConstraint early
-                stored.append(source)
-                log.info(
-                    "source_stored",
-                    url=candidate.url,
-                    type=candidate.source_type,
-                    method=fetch_method,
-                    content_len=len(raw_content),
-                )
-            except IntegrityError:
-                await db.rollback()
-                # Already exists — load existing row
-                existing = await db.scalar(
-                    select(Source).where(
-                        Source.program_id == program_id,
-                        Source.url == candidate.url,
-                    )
-                )
-                if existing:
-                    stored.append(existing)
+            
+            async with db_lock:
+                db.add(source)
+                try:
+                    await db.flush()
+                    stored.append(source)
+                    log.info("source_stored", url=candidate.url, type=candidate.source_type, method=fetch_method, content_len=len(raw_content))
+                except IntegrityError:
+                    await db.rollback()
+                    existing = await db.scalar(select(Source).where(Source.program_id == program_id, Source.url == candidate.url))
+                    if existing:
+                        stored.append(existing)
 
             status_str = "success" if fetch_status == "success" else "failed"
             reason_str = "" if fetch_status == "success" else f"Scrape failed ({fetch_status})"
@@ -570,18 +555,16 @@ async def discover_sources(
                 str(program_id),
                 "crawling_sources",
                 progress_val_fin,
-                json.dumps({
-                    "item": item,
-                    "count": idx + 1,
-                    "total": len(unique_candidates)
-                })
+                json.dumps({"item": item, "count": idx + 1, "total": len(unique_candidates)})
             )
 
+    async with httpx.AsyncClient(headers={"User-Agent": "InfoVac/1.0 (+https://github.com/Hrishikesh-Prasad-R/info-vac)"}) as http:
+        tasks = [
+            process_candidate(idx, candidate, http)
+            for idx, candidate in enumerate(unique_candidates)
+        ]
+        await asyncio.gather(*tasks)
+
     await db.commit()
-    log.info(
-        "retriever_done",
-        program=program_name,
-        stored=len(stored),
-        types=list({s.source_type for s in stored}),
-    )
+    log.info("retriever_done", program=program_name, stored=len(stored), types=list({s.source_type for s in stored}))
     return stored

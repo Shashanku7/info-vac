@@ -31,7 +31,7 @@ def main():
             markdown_text = ""
         
         # Save it to a file so the user can see exactly what goes into the DB
-        output_file = "starbucks_raw_markdown.txt"
+        output_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dumps", "starbucks_raw_markdown.txt")
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(markdown_text)
             

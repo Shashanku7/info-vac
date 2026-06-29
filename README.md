@@ -35,6 +35,7 @@ graph TD
   - Clickable References section displaying the source URL, raw evidence snippet, and access date.
   - Draggable & resizable Quick-Chat widget with markdown rendering and prompt badges.
   - Clean client-side PDF export with active, clickable hyperlinks for all citations.
+  - **LangSmith Tracing Button**: Integrates real-time agent tracing graphs. Shows a "View Trace" button next to "Re-analyse" to view the live execution steps on LangSmith.
 - **Admin & Analytics Dashboard**:
   - Live system health monitoring (Postgres, backend connection).
   - Gate Verification Analytics (Pass/Fail ratios).
@@ -63,13 +64,19 @@ Fill in the required environment variables:
 
 ---
 
-### 2. Installation (Automated)
+### 2. Installation (Automated Setup)
 
-Run the setup batch script to install dependencies, set up virtual environments, and run DB migrations:
+Run the automated onboarding setup script:
 ```bash
 # Windows
 .\setup.bat
 ```
+*This script will dynamically:*
+1. Copy `.env.example` to `.env` if missing.
+2. Boot Postgres DB via Docker Compose.
+3. Spin up Python virtual environment (`venv_infovac`) and install requirements.
+4. Verify Node.js presence and install all frontend node packages inside `frontend/`.
+5. Run schema migrations via Alembic.
 
 *For manual setup:*
 ```bash
@@ -86,13 +93,14 @@ npm install
 
 ---
 
-### 3. Running the Platform
+### 3. Running the Platform (Single-Click)
 
-To boot the entire stack (Postgres container, FastAPI server, Next.js frontend):
+To launch the full stack (FastAPI backend + Next.js dev server + Postgres DB):
 ```bash
 # Windows
 .\start.bat
 ```
+*This launcher monitors the processes in the background. Pressing `Ctrl+C` inside `start.bat` triggers a recursive process tree shutdown (`taskkill /t`), stopping all child Python/Node servers and automatically closing their spawned console windows.*
 
 *For manual startup:*
 ```bash
@@ -116,6 +124,11 @@ The app will be accessible at:
 
 ## 🧪 Testing
 
+To run the comprehensive system test (mock-based, runs in **9 seconds** without requiring database or live LLM tokens):
+```bash
+pytest tests/test_comprehensive_system.py -v -s
+```
+
 To run the full suite of end-to-end integration and unit tests:
 ```bash
 # Activate your venv first
@@ -133,3 +146,4 @@ python scratch/force_extraction.py
 - **Backend**: FastAPI, LangGraph, SQLAlchemy, Alembic, Qdrant, RapidFuzz, Instructor.
 - **Frontend**: Next.js 15, Tailwind CSS, Lucide React, Radix UI, Sonner, @react-pdf/renderer.
 - **Database**: PostgreSQL (Development & Vector Metadata), Qdrant (Vector Embedding Store).
+

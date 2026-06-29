@@ -28,6 +28,7 @@ class Program(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     error_message = Column(Text, nullable=True)
     total_cost = Column(Numeric(8, 4), nullable=False, default=0.0)  # Total LLM usage cost in USD
+    trace_url = Column(Text, nullable=True)  # Shareable LangSmith tracing URL
 
     sources = relationship("Source", back_populates="program", cascade="all, delete-orphan")
 

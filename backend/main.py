@@ -25,7 +25,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db import get_db
-from backend.models import Program, Narrative, Comparison, ExtractedField, PipelineEvent
+from backend.models import Program, Narrative, Comparison, ExtractedField, PipelineEvent, Source
 from backend.comparator import compare_programs
 from orchestrator.graph import run_pipeline
 
@@ -34,6 +34,17 @@ app = FastAPI(
     version="0.3.0",
     description="Autonomous Competitive Intelligence Agent",
 )
+
+@app.on_event("startup")
+async def startup_event():
+    from sqlalchemy import text
+    from backend.db import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        try:
+            await session.execute(text("ALTER TABLE programs ADD COLUMN IF NOT EXISTS trace_url TEXT"))
+            await session.commit()
+        except Exception:
+            pass
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,6 +73,9 @@ class ProgramResponse(BaseModel):
     id: uuid.UUID
     name: str
     status: str
+    trace_url: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -87,6 +101,7 @@ class ExtractedFieldResponse(BaseModel):
     recency_score: Optional[float] = None
     confidence: Optional[float] = None
     source_id: Optional[uuid.UUID] = None
+    source_url: Optional[str] = None
     access_date: Optional[datetime] = None
     contradiction_flag: bool
     contradiction_note: Optional[str] = None
@@ -144,9 +159,17 @@ async def list_all_fields(db: AsyncSession = Depends(get_db)):
 async def get_program_fields(program_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Return all extracted fields for a program, keeping only the latest run per field_name."""
     result = await db.execute(
-        select(ExtractedField).where(ExtractedField.program_id == program_id)
+        select(ExtractedField, Source.url.label("source_url"))
+        .outerjoin(Source, ExtractedField.source_id == Source.id)
+        .where(ExtractedField.program_id == program_id)
     )
-    fields = result.scalars().all()
+    
+    fields = []
+    for row in result.all():
+        field_obj = row[0]
+        field_obj.source_url = row[1]
+        fields.append(field_obj)
+        
     return ExtractedField.get_latest_only(fields)
 
 
@@ -167,7 +190,7 @@ async def get_program_events(program_id: uuid.UUID, db: AsyncSession = Depends(g
             p_val = 0.0
         response.append(
             PipelineEventResponse(
-                id=e.id,
+                id=str(e.id),
                 program_id=e.program_id,
                 stage=e.stage,
                 progress=p_val,
@@ -176,6 +199,45 @@ async def get_program_events(program_id: uuid.UUID, db: AsyncSession = Depends(g
             )
         )
     return response
+
+
+@app.get("/api/programs/search", response_model=list[ProgramResponse])
+async def search_programs(q: str, db: AsyncSession = Depends(get_db)):
+    """Return completed programs whose name contains the query string (case-insensitive).
+    Powers the 'similar programs found' modal in the frontend.
+    """
+    result = await db.execute(
+        select(Program)
+        .where(
+            func.lower(Program.name).contains(func.lower(q.strip())),
+            Program.status == "complete",
+        )
+        .order_by(Program.created_at.desc())
+        .limit(8)
+    )
+    return result.scalars().all()
+
+
+class SourceResponse(BaseModel):
+    id: uuid.UUID
+    url: str
+    source_type: str
+    title: Optional[str] = None
+    fetch_status: str
+    fetched_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+@app.get("/api/programs/{program_id}/sources", response_model=list[SourceResponse])
+async def get_program_sources(program_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Return all crawled sources for a program (used by the Sources tab in the UI)."""
+    result = await db.execute(
+        select(Source)
+        .where(Source.program_id == program_id)
+        .order_by(Source.fetched_at.asc())
+    )
+    return result.scalars().all()
 
 
 @app.post("/api/programs", response_model=ProgramResponse, status_code=200)
@@ -512,3 +574,4 @@ async def get_program_evolution(program_id: uuid.UUID, db: AsyncSession = Depend
 
     res = await loop.run_in_executor(None, _call_llm)
     return res.model_dump()
+

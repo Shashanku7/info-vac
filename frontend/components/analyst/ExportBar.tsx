@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Download, FileText, TableIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Narrative, ExtractedField } from "@/types/api";
+import { parseNarrative, splitNarrativeSegments } from "@/lib/narrative";
 
 interface ExportBarProps {
   narrative?: Narrative | null;
@@ -51,51 +52,8 @@ async function exportPDF(narrative: Narrative, fields: ExtractedField[], program
     "@react-pdf/renderer"
   );
 
-  // Collect unique source URLs in order of appearance
-  const urlMap = new Map<string, number>();
-  let counter = 1;
-  const urlRegex = /\(source:\s*(https?:\/\/[^\s)]+)\)/g;
-  let m: RegExpExecArray | null;
-  while ((m = urlRegex.exec(narrative.narrative)) !== null) {
-    if (!urlMap.has(m[1])) urlMap.set(m[1], counter++);
-  }
-
-  // Build references data
-  const references = Array.from(urlMap.entries()).sort((a, b) => a[1] - b[1]);
-
-  // Split narrative into alternating plain-text / linked-[N] segments
-  function buildBodyNodes(text: string) {
-    const nodes: React.ReactNode[] = [];
-    const re = /\(source:\s*(https?:\/\/[^\s)]+)\)/g;
-    let last = 0;
-    let match: RegExpExecArray | null;
-    let idx = 0;
-    while ((match = re.exec(text)) !== null) {
-      if (match.index > last) {
-        nodes.push(
-          <Text key={`t${idx++}`} style={styles.body}>
-            {text.slice(last, match.index)}
-          </Text>
-        );
-      }
-      const srcUrl = match[1];
-      const num = urlMap.get(srcUrl) ?? "?";
-      nodes.push(
-        <Link key={`l${idx++}`} src={srcUrl} style={styles.citationLink}>
-          [{num}]
-        </Link>
-      );
-      last = re.lastIndex;
-    }
-    if (last < text.length) {
-      nodes.push(
-        <Text key={`t${idx++}`} style={styles.body}>
-          {text.slice(last)}
-        </Text>
-      );
-    }
-    return nodes;
-  }
+  // ── Single source of truth: use the same parseNarrative used by the UI ──
+  const { urlMap, references } = parseNarrative(narrative.narrative, fields);
 
   const styles = StyleSheet.create({
     page: { padding: 48, fontFamily: "Helvetica", backgroundColor: "#FAFAF9" },
@@ -103,19 +61,33 @@ async function exportPDF(narrative: Narrative, fields: ExtractedField[], program
     title: { fontSize: 18, fontWeight: "bold", color: "#1C1917", marginBottom: 4 },
     subtitle: { fontSize: 10, color: "#57534E" },
     body: { fontSize: 10, lineHeight: 1.75, color: "#1C1917" },
-    bodyWrap: { flexDirection: "row", flexWrap: "wrap", marginBottom: 24 },
+    bodyWrap: { marginBottom: 24 },
     citationLink: { fontSize: 9, color: "#0F766E", fontWeight: "bold", textDecoration: "underline" },
     refSection: { marginTop: 24, borderTop: "1px solid #E7E5E4", paddingTop: 16 },
     refHeading: { fontSize: 11, fontWeight: "bold", color: "#1C1917", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 },
     refItem: { flexDirection: "row", gap: 8, marginBottom: 10 },
     refNum: { fontSize: 9, fontWeight: "bold", color: "#0F766E", width: 20, textAlign: "right" },
     refBlock: { flex: 1, gap: 2 },
-    refLabel: { fontSize: 9, color: "#78716C", fontWeight: "bold", width: 90 },
-    refValue: { fontSize: 9, color: "#44403C" },
+    refLabel: { fontSize: 9, color: "#78716C", fontWeight: "bold", width: 90, flexShrink: 0 },
+    refValue: { fontSize: 9, color: "#44403C", flex: 1 },
     refRow: { flexDirection: "row", gap: 4 },
-    refQuote: { fontSize: 9, color: "#57534E", fontStyle: "italic" },
+    refQuote: { fontSize: 9, color: "#57534E", fontStyle: "italic", flex: 1 },
     watermark: { fontSize: 8, color: "#A8A29E", marginTop: 32 },
   });
+
+  // Build narrative body: same segment logic as the UI (splitNarrativeSegments)
+  function buildBodyNodes(text: string) {
+    const segments = splitNarrativeSegments(text, urlMap);
+    return segments.map((seg, idx) =>
+      seg.type === "text" ? (
+        <Text key={`t${idx}`} style={styles.body}>{seg.text}</Text>
+      ) : (
+        <Link key={`l${idx}`} src={`#ref-${seg.num}`} style={styles.citationLink}>
+          [{seg.num}]
+        </Link>
+      )
+    );
+  }
 
   const PDFDoc = () => (
     <Document title={`${programName} — InfoVac Analyst Brief`}>
@@ -129,37 +101,31 @@ async function exportPDF(narrative: Narrative, fields: ExtractedField[], program
           </Text>
         </View>
 
-        {/* Body — [N] citations are clickable links to source URLs */}
-        <View style={styles.bodyWrap}>
+        {/* Body */}
+        <Text style={styles.bodyWrap}>
           {buildBodyNodes(narrative.narrative)}
-        </View>
+        </Text>
 
-        {/* References */}
+        {/* References — built from the same parsed data as the UI */}
         {references.length > 0 && (
           <View style={styles.refSection}>
             <Text style={styles.refHeading}>References</Text>
-            {references.map(([url, num]) => {
-              const matchedField = fields.find(
-                (f) => f.claimed_snippet != null && f.claimed_snippet.length > 0
-              );
-              const accessDate = matchedField?.access_date
-                ? new Date(matchedField.access_date).toLocaleDateString("en-GB", {
-                    day: "numeric",
-                    month: "long",
-                    year: "numeric",
-                  })
+            {references.map((ref) => {
+              const accessDate = ref.accessDate ?? "—";
+              const snippet = ref.snippet
+                ? `"${ref.snippet.slice(0, 180)}${ref.snippet.length > 180 ? "…" : ""}"`
                 : "—";
-              const snippet = matchedField?.claimed_snippet
-                ? `"${matchedField.claimed_snippet.slice(0, 180)}${matchedField.claimed_snippet.length > 180 ? "…" : ""}"`
-                : "—";
+              const displayUrl = ref.url.length > 65 ? ref.url.slice(0, 65) + "..." : ref.url;
 
               return (
-                <View key={url} style={styles.refItem}>
-                  <Link src={url} style={[styles.refNum, { textDecoration: "none" }]}>[{num}]</Link>
+                <View key={ref.url} style={styles.refItem} id={`ref-${ref.num}`}>
+                  <Link src={ref.url} style={[styles.refNum, { textDecoration: "none" }]}>
+                    [{ref.num}]
+                  </Link>
                   <View style={styles.refBlock}>
                     <View style={styles.refRow}>
                       <Text style={styles.refLabel}>Source</Text>
-                      <Text style={[styles.refValue, { color: "#0F766E" }]}>{url}</Text>
+                      <Text style={[styles.refValue, { color: "#0F766E" }]}>{displayUrl}</Text>
                     </View>
                     <View style={styles.refRow}>
                       <Text style={styles.refLabel}>Evidence Quote</Text>
@@ -188,7 +154,9 @@ async function exportPDF(narrative: Narrative, fields: ExtractedField[], program
   const a = document.createElement("a");
   a.href = url;
   a.download = `${programName.replace(/\s+/g, "_")}_brief.pdf`;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 

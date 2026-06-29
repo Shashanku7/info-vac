@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { AlertCircle, Loader2, ChevronDown, ChevronUp, CheckCircle2, RefreshCw } from "lucide-react";
+import { AlertCircle, Loader2, ChevronDown, ChevronUp, CheckCircle2, RefreshCw, Activity } from "lucide-react";
 import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -11,13 +11,19 @@ import { BriefView } from "@/components/analyst/BriefView";
 import { FieldsGrid } from "@/components/analyst/FieldsGrid";
 import { ChatWidget } from "@/components/analyst/ChatWidget";
 import { ExportBar } from "@/components/analyst/ExportBar";
+import { SourcesTab } from "@/components/analyst/SourcesTab";
+import { SimilarProgramsModal } from "@/components/analyst/CacheConflictModal";
 import { useSSE } from "@/hooks/useSSE";
 import { useProgram } from "@/hooks/useProgram";
+import { searchPrograms, createProgram, runProgram } from "@/lib/api";
+import type { Program } from "@/types/api";
 
 export default function AnalystWorkspace() {
   const [programId, setProgramId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [trackerExpanded, setTrackerExpanded] = useState(false);
+  // Pending modal state: holds the typed query + matching completed programs
+  const [pendingSearch, setPendingSearch] = useState<{ query: string; matches: Program[] } | null>(null);
 
   // Load program ID on mount (client-only)
   useEffect(() => {
@@ -65,28 +71,62 @@ export default function AnalystWorkspace() {
   );
 
   const { events, isDegraded } = useSSE(
-    phase === "running" ? programId : null,
+    (phase === "running" || phase === "complete") ? programId : null,
     { onComplete: handleComplete, onFailed: handleFailed }
   );
 
   async function handleSubmit(name: string) {
-    reset();
-    setProgramId(null);
-    setTrackerExpanded(true); // auto-expand while running
-    localStorage.removeItem("infovac_program_id");
-    const id = await startPipeline(name);
-    if (id) {
-      setProgramId(id);
-      localStorage.setItem("infovac_program_id", id);
+    // Search for similar completed programs first
+    const matches = await searchPrograms(name);
+    if (matches.length > 0) {
+      // Show the selection modal — let the user decide
+      setPendingSearch({ query: name, matches });
+      return;
     }
+    // No existing matches — create + run immediately
+    await launchFresh(name);
   }
 
-  async function handleForceReanalyse() {
+  /** Load a specific existing completed program (user chose from modal) */
+  async function handleSelectExisting(prog: Program) {
+    setPendingSearch(null);
+    reset();
+    setTrackerExpanded(false);
+    setProgramId(prog.id);
+    localStorage.setItem("infovac_program_id", prog.id);
+  }
+
+  /** Run a fresh analysis for the typed query, bypassing any cache */
+  async function handleRunFresh() {
+    if (!pendingSearch) return;
+    const { query } = pendingSearch;
+    setPendingSearch(null);
+    await launchFresh(query);
+  }
+
+  /** Internal: create a new pending program and start the pipeline */
+  async function launchFresh(name: string) {
     reset();
     setProgramId(null);
     setTrackerExpanded(true);
     localStorage.removeItem("infovac_program_id");
-    const id = await forceReanalyse();
+    const prog = await createProgram(name, true); // force=true → always fresh
+    setProgramId(prog.id);
+    localStorage.setItem("infovac_program_id", prog.id);
+    await runProgram(prog.id);
+  }
+
+  /** Force re-analyse the current program */
+  async function handleLoadExisting() {}
+
+  async function handleForceReanalyse() {
+    const currentName = program?.name;
+    if (!currentName) return;
+    reset();
+    setProgramId(null);
+    setTrackerExpanded(true);
+    localStorage.removeItem("infovac_program_id");
+    const id = await startPipeline(currentName, true);
     if (id) {
       setProgramId(id);
       localStorage.setItem("infovac_program_id", id);
@@ -106,12 +146,24 @@ export default function AnalystWorkspace() {
             <span className="text-sm font-semibold text-stone-900 tracking-tight">InfoVac</span>
             <span className="text-xs text-muted-foreground">Competitive Intelligence</span>
           </div>
-          <Link
-            href="/admin"
-            className="text-xs text-muted-foreground hover:text-stone-800 transition-colors"
-          >
-            Admin Dashboard →
-          </Link>
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => {
+                reset();
+                setProgramId(null);
+                localStorage.removeItem("infovac_program_id");
+              }}
+              className="text-xs text-[#0F766E] font-medium hover:underline transition-all"
+            >
+              + New Analysis
+            </button>
+            <Link
+              href="/admin"
+              className="text-xs text-muted-foreground hover:text-stone-800 transition-colors"
+            >
+              Admin Dashboard →
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -130,7 +182,9 @@ export default function AnalystWorkspace() {
             </div>
           )}
           <ProgramInput
+            key={programId ?? "new"}
             onSubmit={handleSubmit}
+            onSelectExisting={handleSelectExisting}
             isLoading={isRunning}
           />
         </div>
@@ -202,6 +256,17 @@ export default function AnalystWorkspace() {
                 <p className="text-xs text-muted-foreground">Analysis complete</p>
               </div>
               <div className="flex items-center gap-2">
+                {program?.trace_url && (
+                  <a
+                    href={program.trace_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs text-[#0F766E] border border-[#0F766E]/20 bg-[#0F766E]/5 rounded-md hover:bg-[#0F766E]/10 transition-colors"
+                  >
+                    <Activity size={12} strokeWidth={1.5} />
+                    View Trace
+                  </a>
+                )}
                 <button
                   onClick={handleForceReanalyse}
                   title="Force a fresh re-analysis, bypassing the cache"
@@ -218,7 +283,7 @@ export default function AnalystWorkspace() {
               </div>
             </div>
 
-            {/* Tabs: Brief | Fields */}
+            {/* Tabs: Brief | Sources | Fields */}
             <Tabs defaultValue="brief">
               <TabsList className="h-8 bg-stone-100 p-0.5">
                 <TabsTrigger
@@ -226,6 +291,12 @@ export default function AnalystWorkspace() {
                   className="text-xs h-7 px-4 data-[state=active]:bg-white data-[state=active]:shadow-none"
                 >
                   Analyst Brief
+                </TabsTrigger>
+                <TabsTrigger
+                  value="sources"
+                  className="text-xs h-7 px-4 data-[state=active]:bg-white data-[state=active]:shadow-none"
+                >
+                  All Sources
                 </TabsTrigger>
                 <TabsTrigger
                   value="fields"
@@ -244,6 +315,16 @@ export default function AnalystWorkspace() {
                       <Loader2 className="animate-spin mx-auto text-[#0F766E]" size={20} />
                       <p className="text-xs text-muted-foreground">Analyst brief is generating...</p>
                     </div>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="sources" className="mt-4">
+                <div className="bg-white border border-border rounded-lg p-4">
+                  {programId ? (
+                    <SourcesTab programId={programId} />
+                  ) : (
+                    <p className="text-xs text-muted-foreground text-center py-8">No program selected.</p>
                   )}
                 </div>
               </TabsContent>
@@ -273,6 +354,17 @@ export default function AnalystWorkspace() {
           </div>
         )}
       </main>
+
+      {/* Similar programs cache conflict modal */}
+      {pendingSearch && (
+        <SimilarProgramsModal
+          query={pendingSearch.query}
+          matches={pendingSearch.matches}
+          onSelect={handleSelectExisting}
+          onRunFresh={handleRunFresh}
+          onDismiss={() => setPendingSearch(null)}
+        />
+      )}
     </div>
   );
 }

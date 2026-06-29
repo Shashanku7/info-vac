@@ -17,8 +17,9 @@ def main():
         return
 
     app = FirecrawlApp(api_key=api_key)
-    output_file = "all_starbucks_markdown.txt"
-    input_file = "phase1_output.txt"
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    output_file = os.path.join(base_dir, "dumps", "all_starbucks_markdown.txt")
+    input_file = os.path.join(base_dir, "dumps", "phase1_output.txt")
 
     # Extract URLs from phase1_output.txt
     if not os.path.exists(input_file):

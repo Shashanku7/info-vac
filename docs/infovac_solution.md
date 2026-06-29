@@ -93,7 +93,8 @@ Source-type diversity (not homepage-only) visible in output
 P1
 
 Anti-requirements (explicit, stated up front so they're a decision, not an oversight)
-Multi-user auth, full non-English support, continuous monitoring/scheduling, PDF/PPT export, byte-level output determinism (researched, not pursued — see prior discussion).
+**Note:** Client-side PDF export with active inline hyperlink citations and bibliography reference sheets was fully implemented in Phase 8.
+Multi-user auth, full non-English support, continuous monitoring/scheduling, byte-level output determinism (researched, not pursued — see prior discussion).
 
 2. MVP Scope
 Feature

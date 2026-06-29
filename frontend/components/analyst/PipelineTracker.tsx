@@ -139,6 +139,12 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
     });
   }, [pipelineStatus, latestEvent?.stage]);
 
+  const timerSum = (stageTimes[1] || 0) + (stageTimes[2] || 0) + (stageTimes[3] || 0) + (stageTimes[4] || 0) + (stageTimes[5] || 0);
+  const totalExecutionTimeFallback = events.length >= 2 && events[0].created_at && events[events.length - 1].created_at
+    ? (new Date(events[events.length - 1].created_at!).getTime() - new Date(events[0].created_at!).getTime()) / 1000
+    : 0;
+  const displayTime = timerSum > 0 ? timerSum : totalExecutionTimeFallback;
+
   const stageStartTimes = useRef<Record<number, number>>({});
 
   // Record wall-clock start time for the active stage
@@ -247,6 +253,21 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
 
           {expanded[1] && (
             <div className="px-4 pb-4 border-t border-stone-100 pt-3">
+              {/* Live discovery progress bar */}
+              {candidates.length > 0 && (
+                <div className="mb-3 space-y-1">
+                  <div className="flex justify-between items-center text-[10px] text-stone-500 font-mono">
+                    <span>Sources found</span>
+                    <span className="font-bold text-stone-700">{candidates.length} discovered so far…</span>
+                  </div>
+                  <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-[#0F766E] to-emerald-400 rounded-full animate-pulse transition-all duration-500"
+                      style={{ width: `${Math.min(100, (candidates.length / 40) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               <div
                 ref={(el) => { containers.current[1] = el; }}
                 onScroll={() => handleScroll(1)}
@@ -274,7 +295,9 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                       </div>
                       <span className="text-[10px] text-stone-400 block font-mono mt-0.5 truncate">{c.domain}</span>
                       {c.snippet && (
-                        <p className="text-[10px] text-stone-500 mt-1 line-clamp-1">{c.snippet}</p>
+                        <p className="text-[10px] text-stone-500 mt-1 line-clamp-1 break-all">
+                          {c.snippet.replace(/\s+/g, " ").slice(0, 120)}
+                        </p>
                       )}
                     </a>
                   ))
@@ -458,10 +481,10 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
             className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-stone-50/50 rounded-t-xl sticky top-0 bg-white z-10"
           >
             <div className="flex items-center gap-2.5">
-              {activeStage === 4 ? (
-                <Loader2 size={16} className="animate-spin text-[#0F766E] shrink-0" />
-              ) : activeStage > 4 ? (
+              {activeStage > 4 || (activeStage === 4 && extractedCount === ALL_FIELDS.length) ? (
                 <CheckCircle2 size={16} className="text-emerald-600 shrink-0 fill-emerald-50" />
+              ) : activeStage === 4 ? (
+                <Loader2 size={16} className="animate-spin text-[#0F766E] shrink-0" />
               ) : (
                 <Circle size={16} className="text-stone-300 shrink-0" />
               )}
@@ -571,28 +594,66 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
 
           {expanded[5] && (
             <div className="px-4 pb-4 border-t border-stone-100 pt-3 space-y-4">
-              {/* Task checklist */}
-              <div className="space-y-2">
+              {/* Event-driven task checklist — each step tied to real SSE stage names */}
+              <div className="space-y-0 border border-stone-100 rounded-lg overflow-hidden">
                 {[
-                  { label: "Verification", check: pipelineStatus === "complete" || pipelineStatus === "narrating" || pipelineStatus === "verified", active: pipelineStatus === "verifying" },
-                  { label: "Deduplication", check: crawlsCount > 0, active: false },
-                  { label: "Citation ranking", check: pipelineStatus === "complete" || pipelineStatus === "narrating" || pipelineStatus === "verified", active: pipelineStatus === "verifying" },
-                  { label: "Generating analyst brief", check: pipelineStatus === "complete", active: pipelineStatus === "narrating" },
-                  { label: "Saving output", check: pipelineStatus === "complete", active: false }
+                  {
+                    label: "Running citation gate",
+                    sublabel: "Verifying LLM quotes against raw page content",
+                    done: ["verified", "narrating", "complete"].includes(pipelineStatus),
+                    active: pipelineStatus === "verifying",
+                  },
+                  {
+                    label: "Citations verified",
+                    sublabel: "Gate scores and confidence computed",
+                    done: ["verified", "narrating", "complete"].includes(pipelineStatus),
+                    active: false,
+                  },
+                  {
+                    label: "Writing analyst brief",
+                    sublabel: "Generating the narrative from verified fields",
+                    done: pipelineStatus === "complete",
+                    active: pipelineStatus === "narrating",
+                  },
+                  {
+                    label: "Saving output",
+                    sublabel: "Persisting results to database",
+                    done: pipelineStatus === "complete",
+                    active: false,
+                  },
                 ].map((task, i) => (
-                  <div key={i} className="flex items-center gap-2.5 text-xs text-stone-600 px-1">
-                    {task.check ? (
-                      <span className="w-4 h-4 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0">
+                  <div
+                    key={i}
+                    className={`flex items-start gap-3 px-3 py-2.5 border-b border-stone-100 last:border-0 transition-colors ${
+                      task.active ? "bg-[#0F766E]/5" : "bg-white"
+                    }`}
+                  >
+                    {task.done ? (
+                      <span className="w-4 h-4 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0 mt-0.5">
                         <Check size={8} className="text-emerald-600" />
                       </span>
                     ) : task.active ? (
-                      <Loader2 size={12} className="animate-spin text-[#0F766E] shrink-0" />
+                      <Loader2 size={14} className="animate-spin text-[#0F766E] shrink-0 mt-0.5" />
                     ) : (
-                      <span className="w-3.5 h-3.5 rounded-full border border-stone-300 flex items-center justify-center shrink-0" />
+                      <span className="w-4 h-4 rounded-full border border-stone-200 flex items-center justify-center shrink-0 mt-0.5" />
                     )}
-                    <span className={task.check ? "text-stone-400 line-through" : ""}>
-                      {task.label}
-                    </span>
+                    <div>
+                      <span className={`text-xs font-medium block ${
+                        task.done ? "text-stone-400 line-through" : task.active ? "text-[#0F766E]" : "text-stone-600"
+                      }`}>
+                        {task.label}
+                      </span>
+                      {task.active && (
+                        <span className="text-[10px] text-stone-400 animate-pulse">{task.sublabel}</span>
+                      )}
+                    </div>
+                    {task.active && (
+                      <div className="ml-auto">
+                        <div className="h-1 w-16 bg-stone-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-[#0F766E]/40 rounded-full animate-pulse w-2/3" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -628,7 +689,7 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                     <div className="flex justify-between col-span-2 border-t border-emerald-100/30 pt-1.5 mt-0.5">
                       <span className="text-stone-450">Total execution time:</span>
                       <span className="font-bold text-stone-700">
-                        {(stageTimes[1] + stageTimes[2] + stageTimes[3] + stageTimes[4] + stageTimes[5]).toFixed(1)}s
+                        {displayTime.toFixed(1)}s
                       </span>
                     </div>
                   </div>

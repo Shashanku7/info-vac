@@ -21,12 +21,16 @@ export interface Program {
   id: string;
   name: string;
   status: ProgramStatus;
+  trace_url?: string | null;
+  created_at: string;
+  completed_at?: string | null;
 }
 
 export interface PipelineEvent {
   stage: string;
   progress: number;
   detail: string;
+  created_at?: string;
 }
 
 // ── Extracted Fields ─────────────────────────────
@@ -48,6 +52,7 @@ export interface ExtractedField {
   recency_score: number | null;
   confidence: number | null;
   source_id: string | null;
+  source_url: string | null;
   access_date: string | null;
   contradiction_flag: boolean;
   contradiction_note: string | null;
@@ -116,4 +121,15 @@ export interface ChatHistory {
 export interface ChatResponse {
   conversation_id: string;
   reply: string;
+}
+
+// ── Sources ──────────────────────────────────────
+
+export interface ProgramSource {
+  id: string;
+  url: string;
+  source_type: string;
+  title: string | null;
+  fetch_status: string;
+  fetched_at: string;
 }

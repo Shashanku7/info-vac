@@ -72,3 +72,23 @@ async def set_status(
         await session.commit()
     log.info("status_updated", program_id=program_id, status=status)
 
+
+async def set_trace_url(program_id: str, url: str) -> None:
+    """Update programs.trace_url with a public LangSmith tracing URL.
+    
+    Robust try/except to prevent pipeline failure if the database column
+    does not exist or has migration delays.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            await session.execute(
+                update(Program)
+                .where(Program.id == uuid.UUID(program_id))
+                .values(trace_url=url)
+            )
+            await session.commit()
+            log.info("trace_url_updated", program_id=program_id, url=url)
+        except Exception as exc:
+            log.warning("trace_url_update_failed", program_id=program_id, error=str(exc))
+
+

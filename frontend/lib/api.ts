@@ -14,6 +14,7 @@ import type {
   ChatHistory,
   ChatResponse,
   PipelineEvent,
+  ProgramSource,
 } from "@/types/api";
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -144,5 +145,25 @@ export async function checkHealth(): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/** Get all crawled sources for a program (powers the Sources tab). */
+export async function getProgramSources(programId: string): Promise<ProgramSource[]> {
+  try {
+    return apiFetch<ProgramSource[]>(`/api/programs/${programId}/sources`);
+  } catch {
+    return [];
+  }
+}
+
+/** Fuzzy search: returns completed programs whose name contains the query string.
+ *  Powers the "similar programs found" modal shown before starting a new analysis.
+ */
+export async function searchPrograms(q: string): Promise<Program[]> {
+  try {
+    return apiFetch<Program[]>(`/api/programs/search?q=${encodeURIComponent(q)}`);
+  } catch {
+    return [];
   }
 }

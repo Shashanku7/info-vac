@@ -36,7 +36,20 @@ call .\venv_infovac\Scripts\activate.bat
 pip install -r requirements.txt
 
 echo.
-echo [5/5] Running Database Migrations...
+echo [5/6] Checking Node.js and Installing Frontend Dependencies...
+node -v >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [WARNING] Node.js is not installed!
+    echo Please install Node.js (v18+) to run the frontend app: https://nodejs.org/
+) else (
+    echo Node.js is installed. Installing frontend packages...
+    cd frontend
+    call npm install
+    cd ..
+)
+
+echo.
+echo [6/6] Running Database Migrations...
 alembic upgrade head
 
 echo.
@@ -44,6 +57,6 @@ echo ==============================================
 echo Setup Complete! 
 echo.
 echo NOTE: Make sure you have added your API keys to the .env file!
-echo To run the server, use: .\venv_infovac\Scripts\uvicorn.exe backend.main:app --reload
+echo To start all services, use: .\start.bat
 echo ==============================================
 pause

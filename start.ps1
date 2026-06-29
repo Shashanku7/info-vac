@@ -20,20 +20,20 @@ if ($LASTEXITCODE -ne 0) {
 
 # 2. Start FastAPI Backend in a new window
 Write-Host "[2/3] Starting FastAPI Backend in a new window..." -ForegroundColor Yellow
-$backend = Start-Process -FilePath "cmd.exe" -ArgumentList "/k title InfoVac Backend && call .\venv_infovac\Scripts\activate.bat && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload" -PassThru
+$backend = Start-Process -FilePath "cmd.exe" -ArgumentList "/c title InfoVac Backend && call .\venv_infovac\Scripts\activate.bat && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload" -PassThru
 
 # 3. Start Next.js Frontend in a new window
 Write-Host "[3/3] Starting Next.js Frontend in a new window..." -ForegroundColor Yellow
-$frontend = Start-Process -FilePath "cmd.exe" -ArgumentList "/k title InfoVac Frontend && cd frontend && npm run dev" -PassThru
+$frontend = Start-Process -FilePath "cmd.exe" -ArgumentList "/c title InfoVac Frontend && cd frontend && npm run dev" -PassThru
 
 # Cleanup function to kill background processes on exit
 function Shutdown-Services {
     Write-Host "`nStopping background processes..." -ForegroundColor DarkYellow
     if ($backend) {
-        Stop-Process -Id $backend.Id -Force -ErrorAction SilentlyContinue
+        taskkill /f /t /pid $backend.Id 2>&1 | Out-Null
     }
     if ($frontend) {
-        Stop-Process -Id $frontend.Id -Force -ErrorAction SilentlyContinue
+        taskkill /f /t /pid $frontend.Id 2>&1 | Out-Null
     }
     Write-Host "InfoVac services stopped successfully." -ForegroundColor Green
 }

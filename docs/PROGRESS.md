@@ -2,6 +2,27 @@
 
 ---
 
+## Handoff — 2026-06-28 — Phase 8 [COMPLETE]
+
+### Status
+- **Analyst Workspace**: Live on [info-vac-kobie.vercel.app](https://info-vac-kobie.vercel.app/). Includes command-line input, SSE pipeline tracker, draggable RAG chat, and academic [N] superscript citations linking to the Evidence Drawer.
+- **Admin Dashboard**: Real-time DB health monitoring, cost economics tracking, gate pass/fail ratio donut chart, and multi-program Strategic Comparator matrix.
+- **Trace observability**: Secure LangSmith tracing link generated dynamically and saved to the database on run completions, allowing detailed step-by-step logic inspection.
+- **Test coverage**: Created `tests/test_comprehensive_system.py` providing a comprehensive mock-based system integration test suite that runs in 9 seconds.
+
+### What Phase 8 Built & Modified
+| File | Role |
+|---|---|
+| `frontend/components/analyst/BriefView.tsx` | Academic [N] superscripts linking to a structured References section showing Source URL, Evidence Quote, and Access Date. |
+| `frontend/components/analyst/EvidenceDrawer.tsx` | Added Access Date row, spacing tweaks, and color-coded confidence levels. |
+| `frontend/components/analyst/ExportBar.tsx` | Split PDF generation text to support clickable external hyperlinks for inline citations and bibliography rows. |
+| `frontend/components/admin/SourceTracker.tsx` | Upgraded to color-coded legend and segments mapped to program categories (Teal, Sky blue, Amber, etc.). |
+| `backend/models.py` & `main.py` | Added `trace_url` column and response models with on-startup database schema auto-migrations. |
+| `orchestrator/graph.py` & `events.py` | Integrated `collect_runs()` interceptor and shared trace URL extraction to database. |
+| `tests/test_comprehensive_system.py` | Comprehensive integration tests mapping nodes, schemas, routing, and verification gates. |
+
+---
+
 ## Handoff — 2026-06-27 — Phase 7 [COMPLETE]
 
 ### Status

@@ -35,13 +35,18 @@ The scoring rubric is asymmetric: +1 correct / +0.5 honest null / 0 miss / -3 ha
 | R11 | Structural defense against indirect prompt injection               | P0       |
 | R12 | Source-type diversity visible in output                            | P1       |
 
-**Out of scope (explicit non-requirements):** multi-user auth, full non-English support, continuous monitoring, PDF/PPT export.
+**Implemented in Phase 8:** Client-side PDF export with clickable inline hyperlink citations and bibliography tables.
+**Out of scope:** multi-user auth, full non-English support, continuous monitoring.
 
 ---
 
 ## Solution Approach
 
 The core insight: RAG alone biases the model toward grounded answers but does not guarantee them. The Citation-Verification Gate is the actual guarantee. It is a deterministic code check (not an LLM call) that fuzzy-matches every claimed value against literal stored raw content. A field that cannot be matched to real text on a real page is rejected to null.
+
+We implemented a hybrid database strategy:
+- **PostgreSQL**: Stores deterministic pre-extracted metadata categories and gate validation scores.
+- **Qdrant Cloud**: Stores semantic vector chunks, allowing contextually grounded RAG Q&A conversations.
 
 The pipeline separates concerns across 6 components. Fetched content is always treated as data, never as an instruction that the LLM processes as if it were a prompt (structural prompt-injection defense).
 
@@ -85,20 +90,19 @@ Two components are deliberately deterministic: the Citation-Verification Gate an
 
 | Layer | Choice | Reason |
 |---|---|---|
-| LLM | Claude (A/B vs Gemini on Day 1) | Claude under-extracts rather than fabricates, matching the -3 hallucination penalty better |
-| Orchestration | LangGraph | Explicit graph, retry, and branch semantics map directly onto the 6-component pipeline |
-| Structured extraction | Instructor (wraps Claude) | Pydantic-validated output, automatic retry on schema failure |
-| Source discovery | Tavily | Search-purpose-built, returns ranked LLM-ready snippets |
-| Page fetch | Firecrawl | Handles JS-rendered pages and PDF extraction; BeautifulSoup4 cannot |
-| Backend | FastAPI | Async-native, standard LLM/agent backend |
-| Validation | Pydantic v2 | Native to Instructor and FastAPI |
-| Database | PostgreSQL 15 (JSONB) | Relational core with flexible field storage; no document store needed |
-| Job state / pub-sub | Postgres LISTEN/NOTIFY | Replaces Redis entirely; removes one service from docker-compose |
-| Frontend | Next.js 14 + shadcn/ui + Tailwind | Native SSE via App Router; production-quality UI in days |
-| State | Zustand | 4-5 pieces of cross-component state |
-| Charts | Recharts | Confidence and comparison visualizations |
-| Container | Docker Compose | Postgres only (no Redis) |
-| Hosting | Railway | Fastest code-to-URL path for a 10-day build |
+| LLMs | Gemini-2.5-flash / Claude / Groq | Resilient multi-LLM setup supporting fallback models on rate limits. |
+| Orchestration | LangGraph | Explicit graph retry and branch semantics; integrated with **LangSmith** for full-stack run tracing. |
+| Structured extraction | Instructor | Pydantic-validated output, automatic retry on schema failure. |
+| Source discovery | Tavily | Search-purpose-built, returns ranked LLM-ready snippets. |
+| Page fetch | Firecrawl | Handles JS-rendered pages and PDF extraction; BeautifulSoup4 cannot. |
+| Backend | FastAPI | Async-native, standard LLM/agent backend. |
+| Validation | Pydantic v2 | Native to Instructor and FastAPI. |
+| Database | PostgreSQL 15 & Qdrant Cloud | Relational core for fields and events; Qdrant Cloud for vector index. |
+| Job state / pub-sub | Postgres LISTEN/NOTIFY | Replaces Redis entirely; removes one service from docker-compose. |
+| Frontend | Next.js 15 (React 19) + Tailwind | High-density workspace dashboard, custom charts, SSE listener, and react-pdf exporter. |
+| State | Zustand | Cross-component state storage. |
+| Observability | LangSmith | Visual graph traces generated and saved automatically to database and UI. |
+| Hosting | Vercel (Frontend) & Render (Backend) | Secure production hosting. |
 
 ---
 
