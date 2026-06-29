@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { CheckCircle2, Circle, AlertCircle, Loader2, Globe, ChevronDown, ChevronRight, Check } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
@@ -49,7 +49,7 @@ function Favicon({ url }: { url: string }) {
 export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTrackerProps) {
   // Stage collapse states: Discovering(1), Crawling(2), Discovered(3), Extracting(4), Finalizing(5)
   const [expanded, setExpanded] = useState<Record<number, boolean>>({
-    1: true,
+    1: true,  // start with stage 1 open
     2: false,
     3: false,
     4: false,
@@ -64,50 +64,78 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
   const autoScrolls = useRef<Record<number, boolean>>({ 1: true, 2: true, 4: true });
   const containers = useRef<Record<number, HTMLDivElement | null>>({ 1: null, 2: null, 4: null });
 
-  // Stream data parsing
-  const candidates: Array<{ title: string; url: string; snippet: string; domain: string }> = [];
-  const crawlMap: Record<string, { url: string; status: "active" | "success" | "failed"; reason: string; domain: string; title: string }> = {};
-  const extractedMap: Record<string, { status: "completed" | "failed"; category: string }> = {};
+  // Memoized stream data parsing
+  const { candidates, crawls, extractedMap } = useMemo(() => {
+    const candidatesList: Array<{ title: string; url: string; snippet: string; domain: string }> = [];
+    const crawlMap: Record<string, { url: string; status: "active" | "success" | "failed"; reason: string; domain: string; title: string }> = {};
+    const extractedMap: Record<string, { status: "completed" | "failed"; category: string }> = {};
 
-  // Build current states from events history
-  events.forEach((evt) => {
-    if (evt.stage === "discovering_sources") {
-      try {
-        const payload = JSON.parse(evt.detail);
-        if (payload.item) {
-          // Prevent duplicates in candidate array
-          if (!candidates.some(c => c.url === payload.item.url)) {
-            candidates.push(payload.item);
+    events.forEach((evt) => {
+      if (evt.stage === "discovering_sources") {
+        try {
+          const payload = JSON.parse(evt.detail);
+          if (payload.item) {
+            if (!candidatesList.some(c => c.url === payload.item.url)) {
+              candidatesList.push(payload.item);
+            }
           }
-        }
-      } catch {}
-    } else if (evt.stage === "crawling_sources") {
-      try {
-        const payload = JSON.parse(evt.detail);
-        if (payload.item) {
-          crawlMap[payload.item.url] = payload.item;
-        }
-      } catch {}
-    } else if (evt.stage === "extracting_fields") {
-      try {
-        const payload = JSON.parse(evt.detail);
-        if (payload.item) {
-          extractedMap[payload.item.field_name] = {
-            status: payload.item.status,
-            category: payload.item.category
-          };
-        }
-      } catch {}
-    }
-  });
+        } catch {}
+      } else if (evt.stage === "crawling_sources") {
+        try {
+          const payload = JSON.parse(evt.detail);
+          if (payload.item) {
+            crawlMap[payload.item.url] = payload.item;
+          }
+        } catch {}
+      } else if (evt.stage === "extracting_fields") {
+        try {
+          const payload = JSON.parse(evt.detail);
+          if (payload.item) {
+            extractedMap[payload.item.field_name] = {
+              status: payload.item.status,
+              category: payload.item.category
+            };
+          }
+        } catch {}
+      }
+    });
 
-  const crawls = Object.values(crawlMap);
+    return {
+      candidates: candidatesList,
+      crawls: Object.values(crawlMap),
+      extractedMap,
+    };
+  }, [events]);
+
   const crawlsCount = crawls.filter(c => c.status === "success" || c.status === "failed").length;
   const crawlsSuccess = crawls.filter(c => c.status === "success").length;
   const crawlsFailed = crawls.filter(c => c.status === "failed").length;
 
+
   const latestEvent = events.length > 0 ? events[events.length - 1] : null;
-  const pipelineStatus: ProgramStatus = latestEvent ? (latestEvent.stage as ProgramStatus) : "pending";
+  const pipelineStatus: string = latestEvent ? latestEvent.stage : "pending";
+
+  const extractingLogs = useMemo(() => {
+    return events
+      .filter((evt) => evt.stage === "extracting_fields")
+      .map((evt) => {
+        try {
+          const parsed = JSON.parse(evt.detail);
+          if (parsed.item) return null;
+          return parsed.message || evt.detail;
+        } catch {
+          return evt.detail;
+        }
+      })
+      .filter(Boolean) as string[];
+  }, [events]);
+
+  const logsContainerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+    }
+  }, [extractingLogs.length]);
 
   // Determine stage states and auto-collapsing active lifecycle
   useEffect(() => {
@@ -128,13 +156,16 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
 
     setActiveStage(nextActive);
 
-    // Auto expand active stage, auto collapse previous stages
+    // When pipeline finishes, collapse everything
+    if (pipelineStatus === "complete" || pipelineStatus === "failed") {
+      setExpanded({ 1: false, 2: false, 3: false, 4: false, 5: false });
+      return;
+    }
+
+    // When a new stage becomes active, open it — but keep all already-open stages open
     setExpanded((prev) => {
       const nextExp = { ...prev };
-      // Collapse everything else, expand only active
-      for (let i = 1; i <= 5; i++) {
-        nextExp[i] = i === nextActive;
-      }
+      nextExp[nextActive] = true; // ensure active stage is expanded
       return nextExp;
     });
   }, [pipelineStatus, latestEvent?.stage]);
@@ -258,12 +289,14 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                 <div className="mb-3 space-y-1">
                   <div className="flex justify-between items-center text-[10px] text-stone-500 font-mono">
                     <span>Sources found</span>
-                    <span className="font-bold text-stone-700">{candidates.length} discovered so far…</span>
+                    <span className="font-bold text-stone-700">
+                      {activeStage > 1 ? `${candidates.length} discovered` : `${candidates.length} discovered so far…`}
+                    </span>
                   </div>
                   <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-[#0F766E] to-emerald-400 rounded-full animate-pulse transition-all duration-500"
-                      style={{ width: `${Math.min(100, (candidates.length / 40) * 100)}%` }}
+                      style={{ width: `${activeStage > 1 ? 100 : Math.min(100, (candidates.length / 40) * 100)}%` }}
                     />
                   </div>
                 </div>
@@ -348,9 +381,9 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
               <div className="space-y-1">
                 <div className="flex justify-between items-center text-[10px] text-stone-500 font-mono">
                   <span>Progress</span>
-                  <span>{crawlsCount} / {candidates.length} pages crawled</span>
+                  <span>{activeStage > 2 ? `${candidates.length} / ${candidates.length}` : `${crawlsCount} / ${candidates.length}`} pages crawled</span>
                 </div>
-                <Progress value={candidates.length ? (crawlsCount / candidates.length) * 100 : 0} className="h-1 bg-stone-100" />
+                <Progress value={activeStage > 2 ? 100 : (candidates.length ? (crawlsCount / candidates.length) * 100 : 0)} className="h-1 bg-stone-100" />
               </div>
 
               {/* Feed scroll container */}
@@ -481,7 +514,7 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
             className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-stone-50/50 rounded-t-xl sticky top-0 bg-white z-10"
           >
             <div className="flex items-center gap-2.5">
-              {activeStage > 4 || (activeStage === 4 && extractedCount === ALL_FIELDS.length) ? (
+              {activeStage > 4 || ["verifying", "verified", "narrating", "complete"].includes(pipelineStatus) ? (
                 <CheckCircle2 size={16} className="text-emerald-600 shrink-0 fill-emerald-50" />
               ) : activeStage === 4 ? (
                 <Loader2 size={16} className="animate-spin text-[#0F766E] shrink-0" />
@@ -555,6 +588,24 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                   );
                 })}
               </div>
+
+              {/* Live console box for retry/rate-limit status */}
+              {extractingLogs.length > 0 && (
+                <div className="space-y-1 mt-3">
+                  <div className="text-[9px] text-stone-500 font-mono uppercase tracking-wider">Live Extraction Engine Status</div>
+                  <div 
+                    ref={logsContainerRef}
+                    className="bg-stone-50/50 border border-stone-200 rounded-lg p-2.5 font-mono text-[10px] text-stone-600 space-y-1 max-h-24 overflow-y-auto custom-scrollbar"
+                  >
+                    {extractingLogs.map((logStr, i) => (
+                      <div key={i} className="flex gap-2">
+                        <span className="text-[#0F766E] font-bold">»</span>
+                        <span className="break-all">{logStr}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -600,14 +651,20 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                   {
                     label: "Running citation gate",
                     sublabel: "Verifying LLM quotes against raw page content",
-                    done: ["verified", "narrating", "complete"].includes(pipelineStatus),
+                    done: ["deduplication", "citation_ranking", "verified", "narrating", "complete"].includes(pipelineStatus),
                     active: pipelineStatus === "verifying",
                   },
                   {
-                    label: "Citations verified",
-                    sublabel: "Gate scores and confidence computed",
+                    label: "De-duplicating sources",
+                    sublabel: "Building citation index from verified fields",
+                    done: ["citation_ranking", "verified", "narrating", "complete"].includes(pipelineStatus),
+                    active: pipelineStatus === "deduplication",
+                  },
+                  {
+                    label: "Ranking citations",
+                    sublabel: "Scoring by authority, recency, and corroboration",
                     done: ["verified", "narrating", "complete"].includes(pipelineStatus),
-                    active: false,
+                    active: pipelineStatus === "citation_ranking",
                   },
                   {
                     label: "Writing analyst brief",

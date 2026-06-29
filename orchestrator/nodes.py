@@ -169,13 +169,22 @@ async def embed_node(state: PipelineState) -> PipelineState:
             )
             
         if points:
-            # Upsert in batches
+            # Upsert in batches — each batch has a hard 45-second timeout
+            # so a hanging Qdrant cloud connection never stalls the pipeline.
             batch_size = 100
             for i in range(0, len(points), batch_size):
-                await asyncio.get_running_loop().run_in_executor(
-                    None, 
-                    lambda p=points[i:i+batch_size]: client.upsert(collection_name="sources", points=p)
-                )
+                try:
+                    await asyncio.wait_for(
+                        asyncio.get_running_loop().run_in_executor(
+                            None,
+                            lambda p=points[i:i+batch_size]: client.upsert(collection_name="sources", points=p)
+                        ),
+                        timeout=45.0
+                    )
+                except asyncio.TimeoutError:
+                    log.warning("qdrant_upsert_timeout", batch=i, program_id=program_id)
+                    await emit_event(program_id, "embed_warning", 0.29,
+                                     f"Qdrant upsert timed out for batch {i//batch_size + 1} — chat Q&A may be partial")
             
     except Exception as exc:
         err = str(exc)[:400]
@@ -284,6 +293,9 @@ async def verify_node(state: PipelineState) -> PipelineState:
     url_to_source = {d["url"]: d for d in source_dicts}
     field_rows    = iter_fields(schema_dict)
 
+    await emit_event(program_id, "deduplication", 0.61,
+                     "De-duplicating sources and building citation index")
+
     async def run_judge_if_borderline(gate_res, val, quote, content, fnm):
         if not gate_res.passed and quote and val is not None:
             if 0.70 <= gate_res.match_score <= 0.94:
@@ -375,6 +387,10 @@ async def verify_node(state: PipelineState) -> PipelineState:
             cat_key, field_name, gate_result, matched_source_id,
             (conf_num, corr_num, auth_num, rec_num), evidence_quote,
         ))
+
+    # Emit citation ranking event now that gate is done, before DB write
+    await emit_event(program_id, "citation_ranking", 0.72,
+                     "Ranking citations by authority score and computing confidence")
 
     # ---- Phase 2: One LLM retry pass for still-failing fields ---------------
     retry_updates: dict[str, dict[str, dict]] = {}

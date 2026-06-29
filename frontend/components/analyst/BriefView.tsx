@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Copy, Check, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EvidenceDrawer } from "./EvidenceDrawer";
+import { CitationBadge } from "./CitationBadge";
 import type { Narrative, ExtractedField } from "@/types/api";
 import {
   parseNarrative,
@@ -53,14 +54,12 @@ function renderParagraphs(
           seg.type === "text" ? (
             <span key={j}>{seg.text}</span>
           ) : (
-            <button
+            <CitationBadge
               key={j}
+              num={seg.num ?? 1}
+              url={seg.url}
               onClick={() => seg.url && onCiteClick(seg.url)}
-              className="inline-flex items-center justify-center text-[9px] font-bold text-[#0F766E] hover:text-white bg-transparent hover:bg-[#0F766E] border border-[#0F766E] rounded px-1 py-0 leading-none align-super mx-0.5 transition-colors"
-              title={seg.url}
-            >
-              {seg.num}
-            </button>
+            />
           )
         )}
       </p>
@@ -125,14 +124,16 @@ export function BriefView({ narrative, fields, parsedRefs }: BriefViewProps) {
   const [drawerUrl, setDrawerUrl] = useState<string | null>(null);
 
   // Single source of truth: use pre-parsed refs if parent provided them, otherwise parse here
-  const { urlMap, references } = parsedRefs
-    ? (() => {
-        // Rebuild urlMap from parsedRefs so we can render inline citations
-        const m = new Map<string, number>();
-        parsedRefs.forEach((r) => m.set(r.url, r.num));
-        return { urlMap: m, references: parsedRefs };
-      })()
-    : parseNarrative(narrative.narrative, fields);
+  const { urlMap, references } = useMemo(() => {
+    return parsedRefs
+      ? (() => {
+          // Rebuild urlMap from parsedRefs so we can render inline citations
+          const m = new Map<string, number>();
+          parsedRefs.forEach((r) => m.set(r.url, r.num));
+          return { urlMap: m, references: parsedRefs };
+        })()
+      : parseNarrative(narrative.narrative, fields);
+  }, [narrative.narrative, fields, parsedRefs]);
 
   const drawerField = drawerUrl
     ? fields.find(
@@ -147,6 +148,15 @@ export function BriefView({ narrative, fields, parsedRefs }: BriefViewProps) {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  const wordCount = useMemo(() => {
+    const cleanText = (narrative.narrative || "")
+      .replace(/\(source:\s*https?:\/\/[^\s)]+\)/g, "") // remove source urls
+      .replace(/\[\d+\]/g, "") // remove citation numbers
+      .replace(/\[[a-zA-Z0-9_]+\]/g, "") // remove database schema tags
+      .trim();
+    return cleanText ? cleanText.split(/\s+/).length : 0;
+  }, [narrative.narrative]);
+
   return (
     <>
       <div className="relative">
@@ -154,8 +164,8 @@ export function BriefView({ narrative, fields, parsedRefs }: BriefViewProps) {
           <div>
             <h2 className="text-base font-semibold text-stone-900">Analyst Brief</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {narrative.word_count} words · Click{" "}
-              <sup className="text-[#0F766E] font-bold text-[9px] border border-[#0F766E] rounded px-1">
+              {wordCount} words · Click{" "}
+              <sup className="text-[#0F766E] font-bold text-[9px] border border-[#0F766E] rounded px-1" style={{ color: "#0F766E", borderColor: "#0F766E" }}>
                 N
               </sup>{" "}
               citations to view source evidence

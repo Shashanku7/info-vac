@@ -68,9 +68,9 @@ export function EvidenceDrawer({ open, onClose, sourceUrl, field }: EvidenceDraw
 
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-[480px] sm:w-[520px] flex flex-col p-0 gap-0">
+      <SheetContent side="right" className="w-[480px] sm:w-[540px] flex flex-col p-0 gap-0 h-full overflow-hidden">
         {/* Header */}
-        <SheetHeader className="px-5 pt-5 pb-4 border-b border-border bg-stone-50">
+        <SheetHeader className="px-5 pt-5 pb-4 border-b border-border bg-stone-50 shrink-0">
           <SheetTitle className="text-sm font-semibold text-stone-900">
             Evidence Source
           </SheetTitle>
@@ -91,7 +91,7 @@ export function EvidenceDrawer({ open, onClose, sourceUrl, field }: EvidenceDraw
           </SheetDescription>
         </SheetHeader>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0 overflow-y-auto">
           <div className="px-5 py-5 space-y-5">
             {field ? (
               <>

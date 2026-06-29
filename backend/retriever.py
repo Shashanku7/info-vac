@@ -103,45 +103,18 @@ _QUERIES: dict[str, str] = {
 _MAX_RESULTS_PER_QUERY = 5
 
 # Max URLs to Firecrawl-fetch (to protect free-tier credits)
-_MAX_FIRECRAWL_FETCHES = 20
+_MAX_FIRECRAWL_FETCHES = 22
 
 # Seconds to sleep between Firecrawl calls (rate-limit courtesy)
-_FIRECRAWL_DELAY = 0.5
+_FIRECRAWL_DELAY = 0.3
 
-# ---------------------------------------------------------------------------
-# Classification tables — ordered priority chains
-# ---------------------------------------------------------------------------
+# Hard per-call timeout for BS4 HTTP GET (prevents blocking DNS from escaping async)
+_BS4_HTTP_TIMEOUT = 7.0
 
-# Priority 1: Trusted domain patterns — near-certain, checked first
-_DOMAIN_PATTERNS: list[tuple[str, str]] = [
-    (r"apps\.apple\.com|play\.google\.com|appstore\.com", "app_review"),
-    (r"reddit\.com|quora\.com|trustpilot\.com|tripadvisor\.com|yelp\.com|glassdoor\.com|flyertalk\.com", "forum"),
-    (r"prnewswire\.com|businesswire\.com|globenewswire\.com|sec\.gov|accesswire\.com", "press"),
-    (r"nerdwallet\.com|thepointsguy\.com|bankrate\.com|creditkarma\.com|forbes\.com", "news"),
-]
+# Per-source outer timeout: Firecrawl(20s) + BS4(7s) + robots(5s) + buffer
+_SOURCE_PROCESS_TIMEOUT = 35.0
 
-# Priority 2: URL path patterns — high confidence (includes .pdf)
-_PATH_PATTERNS: list[tuple[str, str]] = [
-    (r"\.pdf($|\?)|terms|conditions|tnc|legal|policy|rules|agreement", "tnc"),
-    (r"faq|faqs|help\.|support\.|questions|howto|how-to", "faq"),
-    (r"press|newsroom|press-release|ir\.|investor", "press"),
-    (r"review|rating|feedback|app-store", "app_review"),
-]
-
-# Priority 3: Title keywords — medium confidence
-_TITLE_KEYWORDS: dict[str, list[str]] = {
-    "tnc":        ["terms", "conditions", "legal", "policy", "rules", "agreement"],
-    "faq":        ["faq", "frequently asked", "help center", "support", "how to"],
-    "press":      ["press release", "announces", "launches", "expands", "partners with"],
-    "news":       ["review", "guide", "best credit", "comparison", "ranking", "worth it"],
-    "app_review": ["app review", "ios", "android rating", "app store"],
-}
-
-# Priority 4: Snippet keywords — fallback
-_SNIPPET_KEYWORDS: dict[str, list[str]] = {
-    "tnc": ["pursuant to", "herein", "shall not", "termination", "obligations"],
-    "faq": ["how do i", "how to", "can i ", "when will", "what is the"],
-}
+from backend.classifier import classify_source
 
 
 # ---------------------------------------------------------------------------
@@ -156,42 +129,6 @@ class _Candidate:
     tavily_snippet: str  # always populated — minimum raw_content guarantee
 
 
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
-def _classify_source(url: str, title: str, snippet: str, default: str) -> str:
-    """Classify source_type using a four-level priority chain.
-
-    Priority (highest to lowest):
-      1. Trusted domain patterns — near-certain (e.g. reddit.com → forum)
-      2. URL path patterns — high confidence (e.g. /terms, .pdf → tnc)
-      3. Page title keyword matching — medium confidence
-      4. Tavily snippet keyword matching — fallback
-
-    No LLM call: all signal comes from data Tavily already returns.
-    """
-    url_lower = url.lower()
-    title_lower = (title or "").lower()
-    snippet_lower = (snippet or "").lower()
-
-    for pattern, stype in _DOMAIN_PATTERNS:
-        if re.search(pattern, url_lower):
-            return stype
-
-    for pattern, stype in _PATH_PATTERNS:
-        if re.search(pattern, url_lower):
-            return stype
-
-    for stype, keywords in _TITLE_KEYWORDS.items():
-        if any(kw in title_lower for kw in keywords):
-            return stype
-
-    for stype, keywords in _SNIPPET_KEYWORDS.items():
-        if any(kw in snippet_lower for kw in keywords):
-            return stype
-
-    return default
 
 
 def _tavily_search(keys: list[str], query: str, source_type: str) -> list[_Candidate]:
@@ -217,7 +154,7 @@ def _tavily_search(keys: list[str], query: str, source_type: str) -> list[_Candi
                     continue
                 title = r.get("title", "") or ""
                 snippet = r.get("content", "") or ""
-                classified = _classify_source(url, title, snippet, source_type)
+                classified = classify_source(url, title, snippet, source_type)
                 candidates.append(_Candidate(
                     url=url,
                     source_type=classified,
@@ -261,50 +198,64 @@ async def _check_robots(url: str, http: httpx.AsyncClient) -> str:
         return "robots_unverified"
 
 
-def _firecrawl_fetch(keys: list[str], url: str) -> tuple[Optional[str], Optional[str]]:
-    """Scrape a URL with Firecrawl, rotating keys if rate-limited or failed."""
-    from firecrawl import FirecrawlApp
+async def _async_firecrawl_fetch(
+    keys: list[str], url: str, http: httpx.AsyncClient
+) -> tuple[Optional[str], Optional[str]]:
+    """Scrape a URL with Firecrawl asynchronously, rotating keys if rate-limited or failed."""
     if not keys:
         return None, None
         
     last_exc = None
     for k in keys:
         try:
-            app = FirecrawlApp(api_key=k)
-            result = app.scrape_url(url, formats=["markdown", "html"])
-            markdown: Optional[str] = None
-            html: Optional[str] = None
-
-            if hasattr(result, "markdown"):
-                markdown = result.markdown or None
-            if hasattr(result, "html"):
-                html = result.html or None
-
-            if isinstance(result, dict):
-                markdown = result.get("markdown") or result.get("content") or None
-                html = result.get("html") or None
-
-            # Paywall detection: reject content that looks like a login/subscribe wall
-            if markdown:
-                paywall_signals = [
-                    "subscribe to read", "subscribe to continue", "subscribe now",
-                    "create an account", "sign in to read", "log in to read",
-                    "already a subscriber", "this content is for subscribers",
-                    "member-only", "premium content", "unlock this article",
-                    "register to read", "free registration required",
-                ]
-                lower_md = markdown.lower()
-                if any(signal in lower_md for signal in paywall_signals) and len(markdown) < 2000:
-                    log.warning("firecrawl_paywall_detected", url=url, content_length=len(markdown))
-                    return None, None
-
-            return markdown, html
+            headers = {
+                "Authorization": f"Bearer {k}",
+                "Content-Type": "application/json"
+            }
+            body = {
+                "url": url,
+                "formats": ["markdown", "html"]
+            }
+            # Specify a strict timeout of 20 seconds
+            resp = await http.post(
+                "https://api.firecrawl.dev/v1/scrape",
+                json=body,
+                headers=headers,
+                timeout=20.0
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("success") and "data" in data:
+                    scrape_data = data["data"]
+                    markdown = scrape_data.get("markdown") or scrape_data.get("content") or None
+                    html = scrape_data.get("html") or None
+                    
+                    # Paywall detection: reject content that looks like a login/subscribe wall
+                    if markdown:
+                        paywall_signals = [
+                            "subscribe to read", "subscribe to continue", "subscribe now",
+                            "create an account", "sign in to read", "log in to read",
+                            "already a subscriber", "this content is for subscribers",
+                            "member-only", "premium content", "unlock this article",
+                            "register to read", "free registration required",
+                        ]
+                        lower_md = markdown.lower()
+                        if any(signal in lower_md for signal in paywall_signals) and len(markdown) < 2000:
+                            log.warning("firecrawl_paywall_detected", url=url, content_length=len(markdown))
+                            return None, None
+                            
+                    return markdown, html
+                else:
+                    log.warning("firecrawl_api_response_not_success", url=url, response=data)
+            else:
+                log.warning("firecrawl_api_status_error", url=url, status_code=resp.status_code)
         except Exception as exc:
             log.warning("firecrawl_key_failed_rotating", key_prefix=k[:6], error=str(exc)[:200])
             last_exc = exc
             
     log.error("all_firecrawl_keys_failed", url=url, error=str(last_exc))
     return None, None
+
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +366,9 @@ async def discover_sources(
 
     async def process_candidate(idx: int, candidate: _Candidate, http: httpx.AsyncClient):
         nonlocal firecrawl_count
-        async with sem:
+        
+        async def scrape_and_store():
+            nonlocal firecrawl_count
             # Emit crawling started event
             start_item = {
                 "url": candidate.url,
@@ -467,9 +420,12 @@ async def discover_sources(
                     firecrawl_count += 1
             
             if use_firecrawl:
-                markdown, html = await loop.run_in_executor(
-                    None, _firecrawl_fetch, firecrawl_keys, candidate.url
-                )
+                try:
+                    markdown, html = await _async_firecrawl_fetch(firecrawl_keys, candidate.url, http)
+                except Exception as exc:
+                    log.warning("firecrawl_fetch_failed", url=candidate.url, error=str(exc))
+                    markdown, html = None, None
+
                 if markdown and len(markdown.strip()) > 50:
                     raw_content = markdown
                     fetch_method = "firecrawl"
@@ -482,13 +438,19 @@ async def discover_sources(
                     raw_html = html[:80_000]
                 await asyncio.sleep(_FIRECRAWL_DELAY)
 
+
             if fetch_method == "tavily_snippet":
                 log.info("firecrawl_failed_trying_bs4", url=candidate.url)
                 try:
                     headers = {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                     }
-                    resp = await http.get(candidate.url, headers=headers, timeout=10.0, follow_redirects=True)
+                    # Strict timeout on the httpx call — prevents blocking DNS resolution
+                    # from escaping the outer asyncio.wait_for via the executor thread
+                    resp = await asyncio.wait_for(
+                        http.get(candidate.url, headers=headers, timeout=_BS4_HTTP_TIMEOUT, follow_redirects=True),
+                        timeout=_BS4_HTTP_TIMEOUT + 1.0
+                    )
                     if resp.status_code == 200:
                         from bs4 import BeautifulSoup
                         soup = BeautifulSoup(resp.content, "html.parser")
@@ -508,7 +470,7 @@ async def discover_sources(
                             raise ValueError("Extracted text too short")
                     else:
                         raise ValueError(f"HTTP Status {resp.status_code}")
-                except Exception as fallback_exc:
+                except (asyncio.TimeoutError, Exception) as fallback_exc:
                     log.warning("bs4_scraping_fallback_failed", url=candidate.url, error=str(fallback_exc)[:200])
                     raw_content = candidate.tavily_snippet
                     fetch_method = "tavily_snippet"
@@ -557,6 +519,44 @@ async def discover_sources(
                 progress_val_fin,
                 json.dumps({"item": item, "count": idx + 1, "total": len(unique_candidates)})
             )
+
+        async with sem:
+            try:
+                await asyncio.wait_for(scrape_and_store(), timeout=_SOURCE_PROCESS_TIMEOUT)
+            except asyncio.TimeoutError:
+                log.warning("source_processing_timeout", url=candidate.url)
+                # Emit scrape failed event
+                item = {
+                    "url": candidate.url,
+                    "status": "failed",
+                    "reason": "Scrape failed (Processing timeout)",
+                    "title": candidate.title or "",
+                    "domain": candidate.url.split("/")[2] if "//" in candidate.url else candidate.url
+                }
+                progress_val_fin = 0.15 + 0.10 * ((idx + 1) / len(unique_candidates))
+                await emit_event(
+                    str(program_id),
+                    "crawling_sources",
+                    progress_val_fin,
+                    json.dumps({"item": item, "count": idx + 1, "total": len(unique_candidates)})
+                )
+            except Exception as exc:
+                log.error("source_processing_failed", url=candidate.url, error=str(exc))
+                item = {
+                    "url": candidate.url,
+                    "status": "failed",
+                    "reason": f"Scrape failed ({str(exc)[:50]})",
+                    "title": candidate.title or "",
+                    "domain": candidate.url.split("/")[2] if "//" in candidate.url else candidate.url
+                }
+                progress_val_fin = 0.15 + 0.10 * ((idx + 1) / len(unique_candidates))
+                await emit_event(
+                    str(program_id),
+                    "crawling_sources",
+                    progress_val_fin,
+                    json.dumps({"item": item, "count": idx + 1, "total": len(unique_candidates)})
+                )
+
 
     async with httpx.AsyncClient(headers={"User-Agent": "InfoVac/1.0 (+https://github.com/Hrishikesh-Prasad-R/info-vac)"}) as http:
         tasks = [

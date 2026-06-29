@@ -1,29 +1,32 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { AlertCircle, Loader2, ChevronDown, ChevronUp, CheckCircle2, RefreshCw, Activity } from "lucide-react";
 import Link from "next/link";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ProgramInput } from "@/components/analyst/ProgramInput";
-import { PipelineTracker } from "@/components/analyst/PipelineTracker";
-import { BriefView } from "@/components/analyst/BriefView";
-import { FieldsGrid } from "@/components/analyst/FieldsGrid";
-import { ChatWidget } from "@/components/analyst/ChatWidget";
-import { ExportBar } from "@/components/analyst/ExportBar";
-import { SourcesTab } from "@/components/analyst/SourcesTab";
 import { SimilarProgramsModal } from "@/components/analyst/CacheConflictModal";
+import { MultiFlowWorkspace } from "@/components/analyst/MultiFlowWorkspace";
+import { SingleProgramView } from "@/components/analyst/SingleProgramView";
 import { useSSE } from "@/hooks/useSSE";
 import { useProgram } from "@/hooks/useProgram";
-import { searchPrograms, createProgram, runProgram } from "@/lib/api";
-import type { Program } from "@/types/api";
+import { searchPrograms, createProgram, runProgram, comparePrograms, getProgram } from "@/lib/api";
+import type { Program, Comparison } from "@/types/api";
 
 export default function AnalystWorkspace() {
   const [programId, setProgramId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [trackerExpanded, setTrackerExpanded] = useState(false);
-  // Pending modal state: holds the typed query + matching completed programs
+  
+  // Pending modal state (if fuzzy match overrides are needed)
   const [pendingSearch, setPendingSearch] = useState<{ query: string; matches: Program[] } | null>(null);
+
+  // Multi-program comparison states
+  const [isMultiFlow, setIsMultiFlow] = useState(false);
+  const [multiRunners, setMultiRunners] = useState<{ id: string; name: string; status: string; progress: number }[]>([]);
+  const [comparisonResult, setComparisonResult] = useState<Comparison | null>(null);
+  const [isComparing, setIsComparing] = useState(false);
+  const [multiError, setMultiError] = useState<string | null>(null);
+  const [expandedRunnerId, setExpandedRunnerId] = useState<string | null>(null);
+  const closeExpandedPanel = useCallback(() => setExpandedRunnerId(null), []);
 
   // Load program ID on mount (client-only)
   useEffect(() => {
@@ -62,7 +65,7 @@ export default function AnalystWorkspace() {
     reset,
   } = useProgram(programId);
 
-  // Sync searchQuery when the loaded program changes (e.g. initial load from localStorage or fetch completes)
+  // Sync searchQuery when the loaded program changes
   useEffect(() => {
     if (program?.name) {
       setSearchQuery(program.name);
@@ -84,58 +87,155 @@ export default function AnalystWorkspace() {
     { onComplete: handleComplete, onFailed: handleFailed }
   );
 
-  async function handleSubmit(name: string) {
-    setSearchQuery(name);
-    // Search for similar completed programs first
-    const matches = await searchPrograms(name);
-    if (matches.length > 0) {
-      // Show the selection modal — let the user decide
-      setPendingSearch({ query: name, matches });
+  // Polling hook for multi-program pipeline status
+  useEffect(() => {
+    if (!isMultiFlow || multiRunners.length === 0) return;
+
+    const active = multiRunners.some(r => r.status !== "complete" && r.status !== "failed");
+    if (!active) {
+      // All runs finished! Trigger the LLM comparison if 2+ are complete
+      const completed = multiRunners.filter(r => r.status === "complete");
+      if (completed.length >= 2 && !comparisonResult && !isComparing && !multiError) {
+        setIsComparing(true);
+        comparePrograms(completed.map(r => r.id))
+          .then(res => {
+            setComparisonResult(res);
+          })
+          .catch(err => {
+            setMultiError(err instanceof Error ? err.message : "Comparison analysis generation failed.");
+          })
+          .finally(() => {
+            setIsComparing(false);
+          });
+      }
       return;
     }
-    // No existing matches — create + run immediately
+
+    const timer = setTimeout(async () => {
+      try {
+        const updated = await Promise.all(
+          multiRunners.map(async (r) => {
+            if (r.status === "complete" || r.status === "failed") return r;
+            try {
+              const prog = await getProgram(r.id);
+              const progressMap: Record<string, number> = {
+                pending: 0.05,
+                retrieving: 0.15,
+                retrieved: 0.30,
+                embedding: 0.40,
+                extracting: 0.60,
+                extracted: 0.70,
+                verifying: 0.85,
+                verified: 0.90,
+                narrating: 0.95,
+                complete: 1.0,
+                failed: 0.0
+              };
+              return {
+                ...r,
+                status: prog.status,
+                progress: progressMap[prog.status] ?? 0.1
+              };
+            } catch {
+              return r;
+            }
+          })
+        );
+        setMultiRunners(updated);
+      } catch {
+        // tolerate fetch failures
+      }
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [isMultiFlow, multiRunners, comparisonResult, isComparing, multiError]);
+
+  async function handleSubmit(input: string | string[]) {
+    setMultiError(null);
+
+    // ── Comparative mode: array of names from the new multi-input UI ──
+    if (Array.isArray(input)) {
+      const names = input.map(n => n.trim()).filter(Boolean);
+      setSearchQuery(names.join(", "));
+      setIsMultiFlow(true);
+      setComparisonResult(null);
+      setMultiRunners([]);
+      setProgramId(null);
+      setExpandedRunnerId(null);
+      localStorage.removeItem("infovac_program_id");
+      reset();
+
+      const runners = [];
+      for (const programName of names) {
+        try {
+          // Search for an exact-name match (case-insensitive) among COMPLETE programs
+          const matches = await searchPrograms(programName);
+          const existing = matches.find(
+            (m) => m.name.toLowerCase().trim() === programName.toLowerCase().trim()
+          );
+          if (existing) {
+            runners.push({ id: existing.id, name: existing.name, status: "complete", progress: 1.0 });
+          } else {
+            // No cache hit — create a brand-new row and run fresh
+            const prog = await createProgram(programName, true);
+            await runProgram(prog.id);
+            runners.push({ id: prog.id, name: prog.name, status: "pending", progress: 0.05 });
+          }
+        } catch (err) {
+          setMultiError(`Failed to queue "${programName}": ${err instanceof Error ? err.message : String(err)}`);
+          setIsMultiFlow(false);
+          return;
+        }
+      }
+      setMultiRunners(runners);
+      return;
+    }
+
+    // ── Single program mode ──
+    const name = (input as string).trim();
+    if (!name) return;
+    setSearchQuery(name);
+    setIsMultiFlow(false);
     await launchFresh(name);
   }
 
-  /** Load a specific existing completed program (user chose from modal) */
   async function handleSelectExisting(prog: Program) {
     setSearchQuery(prog.name);
     setPendingSearch(null);
+    setIsMultiFlow(false);
     reset();
     setTrackerExpanded(false);
     setProgramId(prog.id);
     localStorage.setItem("infovac_program_id", prog.id);
   }
 
-  /** Run a fresh analysis for the typed query, bypassing any cache */
   async function handleRunFresh() {
     if (!pendingSearch) return;
     const { query } = pendingSearch;
     setPendingSearch(null);
+    setIsMultiFlow(false);
     await launchFresh(query);
   }
 
-  /** Internal: create a new pending program and start the pipeline */
   async function launchFresh(name: string) {
     setSearchQuery(name);
     reset();
+    setIsMultiFlow(false);
     setProgramId(null);
     setTrackerExpanded(true);
     localStorage.removeItem("infovac_program_id");
-    const prog = await createProgram(name, true); // force=true → always fresh
+    const prog = await createProgram(name, true);
     setProgramId(prog.id);
     localStorage.setItem("infovac_program_id", prog.id);
     await runProgram(prog.id);
   }
-
-  /** Force re-analyse the current program */
-  async function handleLoadExisting() {}
 
   async function handleForceReanalyse() {
     const currentName = program?.name;
     if (!currentName) return;
     setSearchQuery(currentName);
     reset();
+    setIsMultiFlow(false);
     setProgramId(null);
     setTrackerExpanded(true);
     localStorage.removeItem("infovac_program_id");
@@ -146,13 +246,22 @@ export default function AnalystWorkspace() {
     }
   }
 
+  const handleReset = useCallback(() => {
+    reset();
+    setProgramId(null);
+    setIsMultiFlow(false);
+    setMultiRunners([]);
+    setComparisonResult(null);
+    setMultiError(null);
+    setExpandedRunnerId(null);
+    localStorage.removeItem("infovac_program_id");
+  }, [reset]);
+
   const isRunning = phase === "running";
-  const isComplete = phase === "complete";
-  const isFailed = phase === "failed";
 
   return (
     <div className="min-h-screen bg-[#FAFAF9]">
-      {/* Nav */}
+      {/* Navigation */}
       <header className="border-b border-border bg-white">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -161,12 +270,8 @@ export default function AnalystWorkspace() {
           </div>
           <div className="flex items-center gap-6">
             <button
-              onClick={() => {
-                reset();
-                setProgramId(null);
-                localStorage.removeItem("infovac_program_id");
-              }}
-              className="text-xs text-[#0F766E] font-medium hover:underline transition-all"
+              onClick={handleReset}
+              className="text-xs text-[#0F766E] font-medium hover:underline transition-all cursor-pointer"
             >
               + New Analysis
             </button>
@@ -181,17 +286,23 @@ export default function AnalystWorkspace() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-12 space-y-6">
-        {/* Hero input */}
+        {/* Input area */}
         <div className="text-center space-y-6">
-          {phase === "idle" && (
+          {!isMultiFlow && phase === "idle" && (
             <div className="space-y-2">
               <h1 className="text-3xl font-semibold text-stone-900 tracking-tight">
                 Loyalty Program Intelligence
               </h1>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Enter any loyalty program. InfoVac discovers sources, extracts 44 fields,
-                verifies every claim, and writes an analyst brief.
+                Enter a loyalty program name, or compare multiple programs by separating them with commas (e.g. <code className="text-xs bg-stone-100 px-1 py-0.5 rounded font-mono text-[#0F766E]">Starbucks, Delta, Marriott</code>).
               </p>
+            </div>
+          )}
+          {isMultiFlow && (
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold text-stone-900 tracking-tight">
+                Comparison Workspace
+              </h1>
             </div>
           )}
           <ProgramInput
@@ -203,173 +314,42 @@ export default function AnalystWorkspace() {
           />
         </div>
 
-        {/* Error banner */}
-        {(isFailed || error) && (
-          <Alert className="border-red-200 bg-red-50 max-w-2xl mx-auto">
-            <AlertCircle size={14} strokeWidth={1.5} className="text-red-500" />
-            <AlertDescription className="text-xs text-red-700">
-              {error ?? "Pipeline failed. Check the server logs."}
-            </AlertDescription>
-          </Alert>
+        {/* Multi program flow view */}
+        {isMultiFlow && (
+          <MultiFlowWorkspace
+            runners={multiRunners}
+            expandedRunnerId={expandedRunnerId}
+            onExpandRunner={setExpandedRunnerId}
+            closeExpandedPanel={closeExpandedPanel}
+            multiError={multiError}
+            isComparing={isComparing}
+            comparisonResult={comparisonResult}
+            onClearWorkspace={handleReset}
+          />
         )}
 
-        {/* Pipeline tracker */}
-        {(isRunning || isComplete) && (
-          <div className="border border-border rounded-lg bg-white overflow-hidden">
-            {/* Tracker header — always visible */}
-            <button
-              onClick={() => setTrackerExpanded((v) => !v)}
-              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-stone-50 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                {isComplete ? (
-                  <CheckCircle2 size={14} strokeWidth={1.5} className="text-[#0F766E]" />
-                ) : (
-                  <Loader2 size={14} strokeWidth={1.5} className="animate-spin text-[#0F766E]" />
-                )}
-                <span className="text-xs font-medium text-stone-700">
-                  {isComplete
-                    ? `Pipeline complete · ${events.length} stage${events.length !== 1 ? "s" : ""}`
-                    : "Pipeline running…"}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {trackerExpanded ? "Hide details" : "Show details"}
-                </span>
-                {trackerExpanded ? (
-                  <ChevronUp size={13} strokeWidth={1.5} className="text-muted-foreground" />
-                ) : (
-                  <ChevronDown size={13} strokeWidth={1.5} className="text-muted-foreground" />
-                )}
-              </div>
-            </button>
-
-            {/* Collapsible tracker body */}
-            {trackerExpanded && (
-              <div className="border-t border-border">
-                <PipelineTracker
-                  events={events}
-                  isDegraded={isDegraded}
-                  isConnected={events.length > 0}
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Results section — shown immediately when complete */}
-        {isComplete && (
-          <div className="space-y-4">
-            {/* Program name + export row */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-stone-900">
-                  {program?.name}
-                </h2>
-                <p className="text-xs text-muted-foreground">Analysis complete</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {program?.trace_url && (
-                  <a
-                    href={program.trace_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs text-[#0F766E] border border-[#0F766E]/20 bg-[#0F766E]/5 rounded-md hover:bg-[#0F766E]/10 transition-colors"
-                  >
-                    <Activity size={12} strokeWidth={1.5} />
-                    View Trace
-                  </a>
-                )}
-                <button
-                  onClick={handleForceReanalyse}
-                  title="Force a fresh re-analysis, bypassing the cache"
-                  className="flex items-center gap-1.5 h-8 px-3 text-xs text-muted-foreground border border-border rounded-md hover:text-stone-800 hover:bg-stone-50 transition-colors"
-                >
-                  <RefreshCw size={12} strokeWidth={1.5} />
-                  Re-analyse
-                </button>
-                <ExportBar
-                  narrative={narrative}
-                  fields={fields}
-                  programName={program?.name ?? "program"}
-                />
-              </div>
-            </div>
-
-            {/* Tabs: Brief | Sources | Fields */}
-            <Tabs defaultValue="brief">
-              <TabsList className="h-8 bg-stone-100 p-0.5">
-                <TabsTrigger
-                  value="brief"
-                  className="text-xs h-7 px-4 data-[state=active]:bg-white data-[state=active]:shadow-none"
-                >
-                  Analyst Brief
-                </TabsTrigger>
-                <TabsTrigger
-                  value="sources"
-                  className="text-xs h-7 px-4 data-[state=active]:bg-white data-[state=active]:shadow-none"
-                >
-                  All Sources
-                </TabsTrigger>
-                <TabsTrigger
-                  value="fields"
-                  className="text-xs h-7 px-4 data-[state=active]:bg-white data-[state=active]:shadow-none"
-                >
-                  Data Grid {fields.length > 0 && `(${fields.length})`}
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="brief" className="mt-4">
-                <div className="bg-white border border-border rounded-lg p-6">
-                  {narrative ? (
-                    <BriefView narrative={narrative} fields={fields} />
-                  ) : (
-                    <div className="text-center py-12 space-y-3">
-                      <Loader2 className="animate-spin mx-auto text-[#0F766E]" size={20} />
-                      <p className="text-xs text-muted-foreground">Analyst brief is generating...</p>
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="sources" className="mt-4">
-                <div className="bg-white border border-border rounded-lg p-4">
-                  {programId ? (
-                    <SourcesTab programId={programId} />
-                  ) : (
-                    <p className="text-xs text-muted-foreground text-center py-8">No program selected.</p>
-                  )}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="fields" className="mt-4">
-                <div className="bg-white border border-border rounded-lg p-4">
-                  {fields.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-8">
-                      No field data extracted yet.
-                    </p>
-                  ) : (
-                    <FieldsGrid fields={fields} />
-                  )}
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            {/* Chat widget */}
-            {programId && (
-              <ChatWidget
-                programId={programId}
-                messages={chatMessages}
-                isLoading={isChatLoading}
-                onSend={(msg) => sendMessage(programId, msg)}
-              />
-            )}
-          </div>
+        {/* Single program view */}
+        {!isMultiFlow && (
+          <SingleProgramView
+            programId={programId}
+            program={program}
+            phase={phase}
+            error={error}
+            events={events}
+            isDegraded={isDegraded}
+            trackerExpanded={trackerExpanded}
+            setTrackerExpanded={setTrackerExpanded}
+            narrative={narrative}
+            fields={fields}
+            chatMessages={chatMessages}
+            isChatLoading={isChatLoading}
+            sendMessage={sendMessage}
+            handleForceReanalyse={handleForceReanalyse}
+          />
         )}
       </main>
 
-      {/* Similar programs cache conflict modal */}
+      {/* Suggestion Conflict Modal */}
       {pendingSearch && (
         <SimilarProgramsModal
           query={pendingSearch.query}
@@ -382,5 +362,3 @@ export default function AnalystWorkspace() {
     </div>
   );
 }
-
-

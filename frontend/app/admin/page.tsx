@@ -87,6 +87,9 @@ export default function AdminDashboard() {
     setPrograms(progs);
     setFields(flds);
     setHealthy(ok);
+    // Sum total_cost from all completed program records
+    const cost = progs.reduce((sum, p) => sum + (p.total_cost ?? 0), 0);
+    setTotalCost(cost);
     if (!ok) {
       toast.error("Backend unreachable", {
         description: `Could not reach ${API_BASE}/health`,

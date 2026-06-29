@@ -147,3 +147,23 @@ python scratch/force_extraction.py
 - **Frontend**: Next.js 15, Tailwind CSS, Lucide React, Radix UI, Sonner, @react-pdf/renderer.
 - **Database**: PostgreSQL (Development & Vector Metadata), Qdrant (Vector Embedding Store).
 
+---
+
+## 🕸️ Codebase Knowledge Graph (Graphify)
+This repository includes a pre-built **Graphify Codebase Knowledge Graph** in `graphify-out/` to allow developers and auditors to explore and query the architecture, node relations, and system flow directly from the command line.
+
+To query the knowledge graph:
+* **Ask questions about the architecture**:
+  ```bash
+  graphify query "How does the verification gate validate evidence quotes?"
+  ```
+* **Find shortest paths / relationships between files**:
+  ```bash
+  graphify path "backend/extractor.py" "orchestrator/nodes.py"
+  ```
+* **Explain a key architectural concept**:
+  ```bash
+  graphify explain "Verification Gate"
+  ```
+
+

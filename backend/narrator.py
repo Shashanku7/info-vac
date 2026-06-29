@@ -36,6 +36,8 @@ log = structlog.get_logger(__name__)
 _MIN_WORDS = 200
 _MAX_WORDS = 1000
 
+
+
 # ---------------------------------------------------------------------------
 # Pydantic output schema — single field, no drift surface
 # ---------------------------------------------------------------------------
@@ -59,11 +61,15 @@ _SYSTEM_PROMPT = f"""You are a loyalty program analyst writing a competitive int
 
 Rules:
 1. Use ONLY the information in the GROUNDED DATA block. Do not use any training knowledge.
-2. Every sentence that states a specific fact must end with (source: <url>) using the exact URL from the data.
+2. Every sentence that states a specific fact MUST end with one or more source citations using the exact URLs from the data:
+   - Single source: (source: https://example.com)
+   - Multiple sources for the same fact: (source: https://a.com)(source: https://b.com)
+   - Never combine two different URLs into one citation tag — use separate tags.
 3. Write {_MIN_WORDS}-{_MAX_WORDS} words of dense, analyst-grade prose. No filler sentences.
 4. Organize the brief into clear paragraphs: Program Overview, How Members Earn, How Members Redeem, Tier Structure, Digital Experience, Competitive Position, Member Sentiment.
 5. If a section has no grounded data, skip it entirely — do not pad with guesses.
 6. Do not invent, infer, or extrapolate beyond what is in the GROUNDED DATA block.
+7. Prefer citing official Terms & Conditions and homepage sources over forums and reviews. When multiple sources confirm the same fact, cite all of them.
 """
 
 _RETRY_PROMPT = (
@@ -192,6 +198,8 @@ def _call_narrator(
     model_name: str,
     context: str,
     program_name: str,
+    min_words: int = _MIN_WORDS,
+    max_words: int = _MAX_WORDS,
     out_cost: dict[str, float] = None,
 ) -> str:
     """Run the Instructor call. Returns the brief text.
@@ -204,7 +212,7 @@ def _call_narrator(
             "content": (
                 f"Write a competitive intelligence brief for: {program_name}\n\n"
                 f"{context}\n\n"
-                f"Write the analyst brief now ({_MIN_WORDS}-{_MAX_WORDS} words, "
+                f"Write the analyst brief now ({min_words}-{max_words} words, "
                 "inline (source: <url>) after every fact)."
             ),
         },
@@ -222,18 +230,23 @@ def _call_narrator(
     if out_cost is not None:
         out_cost["cost"] = out_cost.get("cost", 0.0) + cost
 
-    if _MIN_WORDS <= word_count <= _MAX_WORDS:
+    if min_words <= word_count <= max_words:
         return brief
 
     log.warning(
         "word_count_out_of_range_retry",
         word_count=word_count,
-        min=_MIN_WORDS,
-        max=_MAX_WORDS,
+        min=min_words,
+        max=max_words,
     )
 
     # One retry with explicit correction
-    retry_prompt = _RETRY_PROMPT.replace("{{word_count}}", str(word_count))
+    retry_prompt = (
+        f"Your previous brief was {word_count} words, which is outside the required "
+        f"{min_words}-{max_words} word range. "
+        "Please rewrite it, hitting between the target limits. "
+        "Keep all inline (source: <url>) citations."
+    )
     messages.append({"role": "assistant", "content": brief})
     messages.append({"role": "user", "content": retry_prompt})
     kwargs["messages"] = messages
@@ -246,7 +259,7 @@ def _call_narrator(
     if out_cost is not None:
         out_cost["cost"] = out_cost.get("cost", 0.0) + cost2
 
-    if not (_MIN_WORDS <= word_count2 <= _MAX_WORDS):
+    if not (min_words <= word_count2 <= max_words):
         log.warning(
             "word_count_still_out_of_range",
             word_count=word_count2,
@@ -308,10 +321,27 @@ async def generate_narrative(
         # 4. Build grounded context block
         context = await _build_context(program_name, fields, url_by_source_id)
 
+        # Count successful sources fetched for this program
+        scraped_result = await session.execute(
+            select(Source).where(
+                Source.program_id == pid,
+                Source.fetch_status == "success"
+            )
+        )
+        total_scraped_sources = len(scraped_result.scalars().all())
+
+        # Determine dynamic word bounds based on scraped sources volume (R7)
+        # If <= 3 sources, allow smaller brief (200-1000) to prevent LLM hallucinations.
+        # Otherwise, write a full briefing (500-1000).
+        min_words = 500 if total_scraped_sources >= 4 else 200
+        max_words = 1000
+
         log.info(
             "narrative_context_built",
             program_id=program_id,
             grounded_field_count=len(fields),
+            total_scraped_sources=total_scraped_sources,
+            min_words=min_words,
         )
 
         # 5. Make LLM call (run in thread — synchronous Instructor SDK)
@@ -327,6 +357,8 @@ async def generate_narrative(
             model_name,
             context,
             program_name,
+            min_words,
+            max_words,
             out_cost,
         )
 
@@ -368,3 +400,4 @@ async def generate_narrative(
             error=str(exc)[:400],
         )
         return None
+

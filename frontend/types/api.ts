@@ -22,6 +22,7 @@ export interface Program {
   name: string;
   status: ProgramStatus;
   trace_url?: string | null;
+  total_cost?: number | null;
   created_at: string;
   completed_at?: string | null;
 }

@@ -235,14 +235,16 @@ async def compare_programs(
         )
 
         # 3. Make LLM call
-        client, model_name = _make_client()
+        client, _ = _make_client()
         
         prompt = (
             f"Write a strategic competitive market matrix comparison between the following loyalty programs:\n"
             f"  {', '.join(program_names)}\n\n"
             f"{context}\n\n"
             "Generate the comparison now. For each category, rank the programs from best to worst and write "
-            "a factual, grounded strategic rationale. Use inline (source: <url>) after every single fact statement."
+            "a factual, grounded strategic rationale. Every fact statement must be immediately followed by "
+            "its source URL in the format '(source: <url>)'. If citing multiple sources, write them as separate "
+            "parentheses like '(source: <url1>) (source: <url2>)', never grouped inside a single parenthesis."
         )
 
         kwargs: dict = {
@@ -253,8 +255,7 @@ async def compare_programs(
             ],
             "temperature": 0.0,
         }
-        if model_name and not model_name.startswith("gemini"):
-            kwargs["model"] = model_name
+        # Note: FallbackClient sets the model internally — do not add it here.
 
         loop = asyncio.get_running_loop()
         def _call_llm():
@@ -269,7 +270,7 @@ async def compare_programs(
             id=uuid.uuid4(),
             program_a_id=pid_uuids[0],
             program_b_id=pid_uuids[1] if len(pid_uuids) > 1 else None,
-            program_ids=pid_uuids,
+            program_ids=[str(p) for p in pid_uuids],
             analysis_json=analysis,
             created_at=datetime.now(timezone.utc),
         )
@@ -284,9 +285,11 @@ async def compare_programs(
         return comparison
 
     except Exception as exc:
+        import traceback
         log.error(
             "comparison_failed",
             program_ids=program_ids,
-            error=str(exc)[:400],
+            error=str(exc),
+            traceback=traceback.format_exc(),
         )
         return None

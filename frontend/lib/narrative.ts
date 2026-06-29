@@ -14,6 +14,8 @@ export interface ParsedReference {
   snippet: string | null;
   /** ISO date string of access, or null */
   accessDate: string | null;
+  /** Authority tier — lower = higher authority (used for ordering) */
+  authorityTier: number;
 }
 
 export interface ParsedNarrative {
@@ -23,7 +25,45 @@ export interface ParsedNarrative {
   references: ParsedReference[];
 }
 
-const CITATION_REGEX = /\(source:\s*(https?:\/\/[^\s)]+)\)/g;
+const CITATION_REGEX = /source:\s*(https?:\/\/[^\s,)]+)/g;
+
+// Authority tier order — lower tier = higher authority = listed first
+const AUTHORITY_TIER: Record<string, number> = {
+  tnc: 1,
+  homepage: 2,
+  faq: 3,
+  press: 4,
+  benefits: 5,
+  mechanics: 6,
+  partners: 7,
+  news: 8,
+  competitors: 9,
+  app_review: 10,
+  forum: 11,
+};
+
+/**
+ * Score how well a snippet matches a surrounding narrative context window.
+ * Returns the length of the longest common substring (case-insensitive).
+ */
+function longestCommonSubstringLength(a: string, b: string): number {
+  const aL = a.toLowerCase();
+  const bL = b.toLowerCase();
+  // Use a short sliding window match for performance — find the longest
+  // contiguous run of aL that appears in bL.
+  let best = 0;
+  for (let start = 0; start < aL.length; start++) {
+    for (let len = aL.length - start; len >= 4; len--) {
+      if (len <= best) break; // no point checking shorter than current best
+      const sub = aL.slice(start, start + len);
+      if (bL.includes(sub)) {
+        best = len;
+        break;
+      }
+    }
+  }
+  return best;
+}
 
 /**
  * Parse the raw narrative text and build the reference list.
@@ -36,59 +76,60 @@ export function parseNarrative(
   fields: ExtractedField[]
 ): ParsedNarrative {
   const urlMap = new Map<string, number>();
-  let counter = 1;
 
-  // First pass — collect unique URLs in order of appearance
+  // First pass — collect unique URLs in order of appearance and map each
+  // citation occurrence to its surrounding 300-char context window.
+  const urlContexts = new Map<string, string[]>(); // url → list of context windows
   const regex = new RegExp(CITATION_REGEX.source, "g");
+  let counter = 1;
   let m: RegExpExecArray | null;
+
   while ((m = regex.exec(narrativeText)) !== null) {
-    if (!urlMap.has(m[1])) urlMap.set(m[1], counter++);
+    const url = m[1];
+    if (!urlMap.has(url)) {
+      urlMap.set(url, counter++);
+      urlContexts.set(url, []);
+    }
+    // Capture the 300 chars immediately before this citation as context
+    const ctxStart = Math.max(0, m.index - 300);
+    const ctxWindow = narrativeText.slice(ctxStart, m.index).toLowerCase();
+    urlContexts.get(url)!.push(ctxWindow);
   }
 
-  // Build reference list with matched snippets
+  // Build reference list with best-matched snippets per URL
   const references: ParsedReference[] = Array.from(urlMap.entries())
-    .sort((a, b) => a[1] - b[1])
     .map(([url, num]) => {
-      // Collect ALL fields that cite this URL and have a non-empty snippet
+      // Find all fields that cite this URL and have a snippet
       const matched = fields.filter(
         (f) => f.source_url === url && f.claimed_snippet != null && f.claimed_snippet.length > 0
       );
 
-      // Pick the snippet that best represents the citation context:
-      // 1) Find the text immediately around any (source: url) citation in the narrative
-      // 2) Look for a field whose snippet is a substring of that surrounding context
-      // 3) Fall back to the first matched field's snippet
+      // Pick the snippet whose content best overlaps with any context window
+      // in which this URL was cited (longest-common-substring scoring).
       let bestSnippet: string | null = null;
+      let bestScore = 0;
 
-      if (matched.length > 0) {
-        // Find surrounding narrative context for this URL
-        const surroundingRegex = new RegExp(
-          `(.{0,300})\\(source:\\s*${escapeRegex(url)}\\)`,
-          "g"
-        );
-        const contexts: string[] = [];
-        let ctx: RegExpExecArray | null;
-        while ((ctx = surroundingRegex.exec(narrativeText)) !== null) {
-          contexts.push(ctx[1].toLowerCase());
-        }
+      const contexts = urlContexts.get(url) ?? [];
 
-        // Try to find a snippet that appears in one of the surrounding contexts
-        let found = false;
-        for (const ctx of contexts) {
-          for (const f of matched) {
-            if (f.claimed_snippet && ctx.includes(f.claimed_snippet.toLowerCase().slice(0, 40))) {
-              bestSnippet = f.claimed_snippet;
-              found = true;
-              break;
+      if (matched.length > 0 && contexts.length > 0) {
+        for (const f of matched) {
+          const snip = f.claimed_snippet!;
+          for (const ctx of contexts) {
+            const score = longestCommonSubstringLength(snip, ctx);
+            if (score > bestScore) {
+              bestScore = score;
+              bestSnippet = snip;
             }
           }
-          if (found) break;
         }
-
-        // Fallback: just use the first matched snippet
+        // If no overlap found at all, fall back to longest snippet (most informative)
         if (!bestSnippet) {
-          bestSnippet = matched[0].claimed_snippet ?? null;
+          bestSnippet = matched.reduce((a, b) =>
+            (a.claimed_snippet?.length ?? 0) >= (b.claimed_snippet?.length ?? 0) ? a : b
+          ).claimed_snippet ?? null;
         }
+      } else if (matched.length > 0) {
+        bestSnippet = matched[0].claimed_snippet ?? null;
       }
 
       // Access date from the first field with this URL that has a date
@@ -96,7 +137,6 @@ export function parseNarrative(
         (f) => f.source_url === url && f.access_date != null
       );
 
-      // Format: "29 June 2026, 05:14"
       let formattedDate: string | null = null;
       if (dateField?.access_date) {
         const d = new Date(dateField.access_date);
@@ -106,20 +146,49 @@ export function parseNarrative(
           d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
       }
 
+      // Determine authority tier from the source_type of the best-matched field
+      const bestField = matched.find((f) => f.claimed_snippet === bestSnippet) ?? matched[0];
+      const sourceType = bestField?.category ?? "";
+      // Also check URL domain patterns for tier classification
+      let authorityTier = AUTHORITY_TIER[sourceType] ?? 8;
+      // Override by URL domain pattern — forum/reddit are always low authority
+      if (/reddit\.com|quora\.com|trustpilot|tripadvisor|yelp|flyertalk/i.test(url)) {
+        authorityTier = Math.max(authorityTier, AUTHORITY_TIER.forum);
+      }
+      if (/prnewswire|businesswire|globenewswire/i.test(url)) {
+        authorityTier = Math.min(authorityTier, AUTHORITY_TIER.press);
+      }
+
       return {
         num,
         url,
         snippet: bestSnippet,
         accessDate: formattedDate,
+        authorityTier,
       };
     });
 
-  return { urlMap, references };
+  // Sort references by authority tier (ascending = most authoritative first)
+  // then by original appearance order within the same tier.
+  references.sort((a, b) => {
+    if (a.authorityTier !== b.authorityTier) return a.authorityTier - b.authorityTier;
+    return a.num - b.num;
+  });
+
+  // Re-number after sorting so [1] is the most authoritative source
+  const reNumberedUrlMap = new Map<string, number>();
+  references.forEach((ref, idx) => {
+    ref.num = idx + 1;
+    reNumberedUrlMap.set(ref.url, idx + 1);
+  });
+
+  return { urlMap: reNumberedUrlMap, references };
 }
 
 /**
  * Split narrative text into segments, replacing (source: URL) with
  * the citation number so callers can render inline [N] badges.
+ * Handles consecutive citations on the same sentence correctly.
  */
 export interface NarrativeSegment {
   type: "text" | "citation";
@@ -155,4 +224,66 @@ export function splitNarrativeSegments(
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Extract unique URLs from a set of fields, build and sort ParsedReference items.
+ */
+export function buildReferencesFromFields(allFields: ExtractedField[]): ParsedNarrative {
+  const uniqueUrls = Array.from(
+    new Set(
+      allFields
+        .filter((f) => f.gate_passed && f.source_url)
+        .map((f) => f.source_url)
+    )
+  ).filter((url): url is string => url !== null);
+
+  const references: ParsedReference[] = uniqueUrls.map((url, idx) => {
+    const fieldsCiting = allFields.filter((f) => f.source_url === url);
+    const bestField = fieldsCiting.find((f) => f.claimed_snippet) || fieldsCiting[0];
+
+    // Format access date using identical sub-logic
+    let formattedDate: string | null = null;
+    const targetDate = bestField?.access_date || bestField?.created_at;
+    if (targetDate) {
+      const d = new Date(targetDate);
+      formattedDate =
+        d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) +
+        ", " +
+        d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+
+    // Determine authority tier
+    const sourceType = bestField?.category ?? "";
+    let authorityTier = AUTHORITY_TIER[sourceType] ?? 8;
+    if (/reddit\.com|quora\.com|trustpilot|tripadvisor|yelp|flyertalk/i.test(url)) {
+      authorityTier = Math.max(authorityTier, AUTHORITY_TIER.forum);
+    }
+    if (/prnewswire|businesswire|globenewswire/i.test(url)) {
+      authorityTier = Math.min(authorityTier, AUTHORITY_TIER.press);
+    }
+
+    return {
+      num: idx + 1,
+      url,
+      snippet: bestField?.claimed_snippet || null,
+      accessDate: formattedDate,
+      authorityTier,
+    };
+  });
+
+  // Sort references by authority tier then by original number
+  references.sort((a, b) => {
+    if (a.authorityTier !== b.authorityTier) return a.authorityTier - b.authorityTier;
+    return a.num - b.num;
+  });
+
+  // Re-number
+  const urlMap = new Map<string, number>();
+  references.forEach((ref, idx) => {
+    ref.num = idx + 1;
+    urlMap.set(ref.url, idx + 1);
+  });
+
+  return { urlMap, references };
 }

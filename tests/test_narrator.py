@@ -158,7 +158,10 @@ async def test_narrative_written_to_db():
     sources_scalars = MagicMock()
     sources_scalars.scalars.return_value.all.return_value = [fake_source]
 
-    session.execute.side_effect = [fields_scalars, sources_scalars]
+    scraped_scalars = MagicMock()
+    scraped_scalars.scalars.return_value.all.return_value = [fake_source]
+
+    session.execute.side_effect = [fields_scalars, sources_scalars, scraped_scalars]
     session.flush = AsyncMock()
 
     # Mock LLM — 600 words in range

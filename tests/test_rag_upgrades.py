@@ -113,7 +113,7 @@ async def test_llm_judge_gate_invoked_on_borderline_match():
     }
     
     # Mock LLM judge returning YES (True)
-    with patch("orchestrator.nodes.gate_verify", return_value=mock_gate_res), \
+    with patch("orchestrator.nodes.gate_verify_multi_source", return_value=(mock_gate_res, None, None)), \
          patch("orchestrator.nodes._call_llm_judge", return_value=True) as mock_judge, \
          patch("orchestrator.nodes.AsyncSessionLocal") as mock_session_cls, \
          patch("orchestrator.nodes.emit_event") as mock_emit:

@@ -48,106 +48,7 @@ from backend.extraction_schemas import (
 
 log = structlog.get_logger(__name__)
 
-# ---------------------------------------------------------------------------
-# Robust LLM fallbacks chain
-# ---------------------------------------------------------------------------
-
-def _get_available_backends() -> list[dict[str, Any]]:
-    """Return a list of available LLM configurations based on environment keys.
-    
-    Priority order:
-    1. Gemini (primary — 3 rotating keys)
-    2. Ollama cloud
-    3. Groq (fast free-tier fallback)
-    4. Anthropic Claude
-    5. OpenAI
-    """
-    backends = []
-    from backend.embeddings import _get_gemini_keys
-    gemini_keys = _get_gemini_keys()
-    ollama_key = os.environ.get("OLLAMA_API_KEY", "")
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "")
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    groq_key = os.environ.get("GROQ_API_KEY", "")
-    groq_model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
-
-    # 1. Gemini keys (primary)
-    for idx, g_key in enumerate(gemini_keys):
-        from openai import OpenAI
-        backends.append({
-            "provider": f"gemini-key-{idx+1}",
-            "model": "gemini-2.5-flash",
-            "client": lambda k=g_key: instructor.from_openai(
-                OpenAI(
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                    api_key=k,
-                ),
-                mode=instructor.Mode.JSON,
-            )
-        })
-
-    # 2. Ollama cloud
-    if ollama_key:
-        from openai import OpenAI
-        backends.append({
-            "provider": "ollama-cloud",
-            "model": "gemma4:31b-cloud",
-            "client": lambda: instructor.from_openai(
-                OpenAI(
-                    base_url="https://ollama.com/v1",
-                    api_key=ollama_key,
-                ),
-                mode=instructor.Mode.JSON,
-            )
-        })
-
-    # 3. Groq (fast free-tier fallback)
-    if groq_key:
-        from openai import OpenAI
-        backends.append({
-            "provider": "groq",
-            "model": groq_model,
-            "client": lambda: instructor.from_openai(
-                OpenAI(
-                    base_url="https://api.groq.com/openai/v1",
-                    api_key=groq_key,
-                ),
-                mode=instructor.Mode.JSON,
-            )
-        })
-
-    # 4. Anthropic Claude
-    if anthropic_key and not anthropic_key.startswith("sk-ant-YOUR_KEY_HERE"):
-        import anthropic
-        backends.append({
-            "provider": "anthropic",
-            "model": "claude-3-5-haiku-20241022",
-            "client": lambda: instructor.from_anthropic(
-                anthropic.Anthropic(api_key=anthropic_key)
-            )
-        })
-
-    # 5. OpenAI
-    if openai_key:
-        from openai import OpenAI
-        backends.append({
-            "provider": "openai",
-            "model": "gpt-4o-mini",
-            "client": lambda: instructor.from_openai(
-                OpenAI(api_key=openai_key),
-                mode=instructor.Mode.JSON,
-            )
-        })
-
-    if not backends:
-        raise ValueError(
-            "No LLM key found. Please set GEMINI_API_KEY, GROQ_API_KEY, "
-            "ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env"
-        )
-
-    return backends
-
-
+from backend.llm_client import _get_available_backends, _make_client
 
 # ---------------------------------------------------------------------------
 # Content Sanitizer — injection defense
@@ -319,11 +220,32 @@ def _extract_category(
     program_name: str,
     sources: list,
     category_name: str,
+    program_id: Optional[str] = None,
+    main_loop: Optional[Any] = None,
+    delay_seconds: float = 0.0,
 ) -> tuple[BaseModel | None, float]:
     """Run extraction for a single category, falling back to other backends on failure."""
+    if delay_seconds > 0:
+        import time
+        time.sleep(delay_seconds)
+
     use_html = (category_name == "Tier System")
     source_msg = _build_source_message(program_name, sources, use_html_tables=use_html)
     category_prompt = f"\nFor the category '{category_name}', extract only the fields defined in the schema."
+
+    def emit_status(msg: str):
+        if program_id and main_loop:
+            from orchestrator.events import emit_event
+            import asyncio
+            asyncio.run_coroutine_threadsafe(
+                emit_event(
+                    program_id,
+                    "extracting_fields",
+                    0.30,
+                    msg
+                ),
+                main_loop
+            )
 
     for backend in backends:
         provider = backend["provider"]
@@ -332,9 +254,13 @@ def _extract_category(
             client = backend["client"]()
         except Exception as exc:
             log.warning("failed_to_initialize_client", provider=provider, model=model_name, error=str(exc))
+            emit_status(f"Failed to initialize client for {provider} on '{category_name}'. Trying next backend...")
             continue
 
         log.info("trying_extraction", provider=provider, model=model_name, category=category_name)
+        emit_status(f"Extracting category '{category_name}' using {provider} ({model_name})...")
+
+        attempt_count = 0
 
         @retry(
             stop=stop_after_attempt(2),
@@ -342,6 +268,10 @@ def _extract_category(
             reraise=True,
         )
         def _attempt():
+            nonlocal attempt_count
+            attempt_count += 1
+            if attempt_count > 1:
+                emit_status(f"Rate limit / API error on {provider} for '{category_name}'. Retrying (Attempt #{attempt_count})...")
             return client.chat.completions.create(
                 model=model_name,
                 messages=[
@@ -355,8 +285,25 @@ def _extract_category(
             result = _attempt()
             cost = _calculate_usage_cost(result, provider)
             log.info("category_extracted", category=category_name, program=program_name, provider=provider, model=model_name, cost=cost)
+            emit_status(f"Successfully extracted category '{category_name}' using {provider}.")
             return result, cost
         except Exception as exc:
+            # Report failure/cooldown to key broker if it was a broker-managed client
+            try:
+                err_msg = str(exc).lower()
+                is_quota = "quota" in err_msg or "429" in err_msg or "limit" in err_msg or "resource_exhausted" in err_msg
+                from backend.llm_client import gemini_broker, groq_broker
+                
+                # Extract the api_key value dynamically from the client if present
+                raw_key = getattr(getattr(client, "client", None), "api_key", None)
+                if raw_key:
+                    if provider == "gemini-broker":
+                        gemini_broker.report_failure(raw_key, is_quota_exhausted=is_quota)
+                    elif provider == "groq-broker":
+                        groq_broker.report_failure(raw_key, is_quota_exhausted=is_quota)
+            except Exception as broker_exc:
+                log.warning("failed_to_report_key_failure_to_broker", error=str(broker_exc))
+
             log.error(
                 "category_extraction_failed_for_backend",
                 category=category_name,
@@ -365,9 +312,11 @@ def _extract_category(
                 model=model_name,
                 error=str(exc)[:300],
             )
+            emit_status(f"{provider} failed for category '{category_name}'. Falling back to next backend...")
             continue
 
     log.error("all_backends_failed", category=category_name, program=program_name)
+    emit_status(f"All backends failed to extract category '{category_name}'.")
     return None, 0.0
 
 
@@ -419,9 +368,12 @@ def extract_fields(
                 cat_model,
                 program_name,
                 sources,
-                cat_name
+                cat_name,
+                program_id,
+                main_loop,
+                0.6 * idx  # stagger API start times to stay below rate limit RPS caps
             ): (cat_name, cat_model, cat_key)
-            for cat_name, cat_model, cat_key in _CATEGORY_MAP
+            for idx, (cat_name, cat_model, cat_key) in enumerate(_CATEGORY_MAP)
         }
 
         completed_count = 0
@@ -651,61 +603,6 @@ def retry_failed_fields(
     return results, total_retry_cost
 
 
-class FallbackCompletions:
-    def __init__(self, make_backends_fn):
-        self.make_backends_fn = make_backends_fn
 
-    def create(self, **kwargs):
-        backends = self.make_backends_fn()
-        if not backends:
-            raise ValueError("No LLM key found.")
-        
-        last_exc = None
-        for backend in backends:
-            try:
-                client = backend["client"]()
-                model_name = backend["model"]
-                
-                current_kwargs = dict(kwargs)
-                current_kwargs["model"] = model_name
-                
-                if "response_model" in current_kwargs:
-                    if hasattr(client, "chat") and hasattr(client.chat, "completions"):
-                        return client.chat.completions.create(**current_kwargs)
-                    elif hasattr(client, "completions"):
-                        return client.completions.create(**current_kwargs)
-                    else:
-                        return client.client.chat.completions.create(**current_kwargs)
-                else:
-                    raw_client = getattr(client, "client", client)
-                    if hasattr(raw_client, "chat") and hasattr(raw_client.chat, "completions"):
-                        return raw_client.chat.completions.create(**current_kwargs)
-                    elif hasattr(raw_client, "completions"):
-                        return raw_client.completions.create(**current_kwargs)
-                    else:
-                        return raw_client.chat.completions.create(**current_kwargs)
-            except Exception as exc:
-                log.warning("llm_routing_failover", provider=backend["provider"], model=backend["model"], error=str(exc))
-                last_exc = exc
-        if last_exc:
-            raise last_exc
-        raise ValueError("All LLM backends in the failover chain failed.")
-
-class FallbackChat:
-    def __init__(self, make_backends_fn):
-        self.completions = FallbackCompletions(make_backends_fn)
-
-class FallbackClient:
-    def __init__(self, make_backends_fn):
-        self.chat = FallbackChat(make_backends_fn)
-        self.client = self
-
-
-def _make_client() -> tuple[Any, str]:
-    """Compatibility helper. Returns a routing fallback client that transparently fails-over between backends."""
-    backends = _get_available_backends()
-    if not backends:
-        raise ValueError("No LLM key found.")
-    return FallbackClient(_get_available_backends), "fallback-chain"
 
 

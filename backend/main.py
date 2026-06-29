@@ -46,6 +46,16 @@ async def startup_event():
         except Exception:
             pass
 
+        try:
+            # Clean up dangling program runs from previous crashed server instances
+            await session.execute(
+                text("UPDATE programs SET status = 'failed' WHERE status NOT IN ('complete', 'failed', 'pending')")
+            )
+            await session.commit()
+        except Exception as e:
+            print("Failed to clean up dangling programs:", e)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -74,6 +84,7 @@ class ProgramResponse(BaseModel):
     name: str
     status: str
     trace_url: Optional[str] = None
+    total_cost: Optional[float] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 
@@ -205,12 +216,14 @@ async def get_program_events(program_id: uuid.UUID, db: AsyncSession = Depends(g
 async def search_programs(q: str, db: AsyncSession = Depends(get_db)):
     """Return completed programs whose name contains the query string (case-insensitive).
     Powers the 'similar programs found' modal in the frontend.
+    Excludes programs whose name contains a comma (old multi-program rows).
     """
     result = await db.execute(
         select(Program)
         .where(
             func.lower(Program.name).contains(func.lower(q.strip())),
             Program.status == "complete",
+            ~Program.name.contains(","),  # exclude stale multi-name rows
         )
         .order_by(Program.created_at.desc())
         .limit(8)
@@ -483,95 +496,9 @@ async def get_chat_history(
 
 
 # ---------------------------------------------------------------------------
-# Program Evolution Changelog Endpoint
+# Program Evolution Changelog Router Registration
 # ---------------------------------------------------------------------------
+from backend.routers.evolution import router as evolution_router
+app.include_router(evolution_router)
 
-from typing import Optional, Any
-from pydantic import Field
-from backend.models import ExtractedField
-from backend.extractor import _make_client
-
-class ChangelogItem(BaseModel):
-    category: str = Field(description="Category of the field (e.g., 'earn_mechanics')")
-    field_name: str = Field(description="Name of the field")
-    old_value: Optional[str] = Field(description="Old value")
-    new_value: Optional[str] = Field(description="New value")
-    change_type: str = Field(description="Type of change: 'upgraded', 'devalued', 'altered', or 'none'")
-    analysis: str = Field(description="Factual analysis of what changed and the strategic impact")
-
-class EvolutionOutput(BaseModel):
-    executive_summary: str = Field(description="High-level analysis of how the loyalty program evolved over time.")
-    changelog: list[ChangelogItem] = Field(description="List of specific changes between oldest and newest runs.")
-
-@app.get("/api/programs/{program_id}/evolution")
-async def get_program_evolution(program_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """Analyze changes in program fields over time (oldest run vs. newest run)."""
-    program = await db.get(Program, program_id)
-    if program is None:
-        raise HTTPException(status_code=404, detail="Program not found")
-
-    fields_res = await db.execute(
-        select(ExtractedField).where(
-            ExtractedField.program_id == program_id,
-            ExtractedField.gate_passed == True
-        ).order_by(ExtractedField.created_at.asc())
-    )
-    all_fields = list(fields_res.scalars().all())
-    
-    if not all_fields:
-        raise HTTPException(status_code=404, detail="No extraction data found for this program.")
-
-    by_field = {}
-    for f in all_fields:
-        by_field.setdefault(f.field_name, []).append(f)
-
-    diff_lines = []
-    for field_name, run_list in by_field.items():
-        oldest = run_list[0]
-        newest = run_list[-1]
-        
-        old_val = str(oldest.field_value) if oldest.field_value is not None else "null"
-        new_val = str(newest.field_value) if newest.field_value is not None else "null"
-        
-        if oldest.id != newest.id:
-            diff_lines.append(
-                f"- Category: {oldest.category}\n"
-                f"  Field: {field_name}\n"
-                f"  Old Value (extracted {oldest.created_at.isoformat()}): {old_val}\n"
-                f"  New Value (extracted {newest.created_at.isoformat()}): {new_val}\n"
-            )
-            
-    if not diff_lines:
-        return {
-            "executive_summary": "No changes detected. The program has only been run once, or no fields have evolved.",
-            "changelog": []
-        }
-
-    grounded_context = "\n".join(diff_lines)
-    prompt = (
-        "You are a loyalty program analyst. Your task is to write a structured evolution changelog.\n"
-        "Here is the diff comparing the oldest extraction run against the newest run for this program:\n\n"
-        f"{grounded_context}\n\n"
-        "Analyze these differences and output a structured changelog specifying if they represent upgrades, "
-        "devaluations, alterations, or no change, and write a professional strategic analysis for each."
-    )
-    
-    client, model_name = _make_client()
-    kwargs = {
-        "response_model": EvolutionOutput,
-        "messages": [
-            {"role": "system", "content": "You are a competitive intelligence analyst. Write a strategic evolution changelog."},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.0,
-    }
-    if model_name and not model_name.startswith("gemini"):
-        kwargs["model"] = model_name
-
-    loop = asyncio.get_running_loop()
-    def _call_llm():
-        return client.chat.completions.create(**kwargs)
-
-    res = await loop.run_in_executor(None, _call_llm)
-    return res.model_dump()
 

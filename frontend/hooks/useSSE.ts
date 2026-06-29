@@ -17,7 +17,7 @@ interface UseSSEReturn {
 }
 
 const POLL_INTERVAL_MS = 3000;
-const SSE_FALLBACK_MS = 5000; // Only fallback if SSE never opens within 5s
+const SSE_FALLBACK_MS = 10000; // Only fallback if SSE never opens within 10s
 
 export function useSSE(
   programId: string | null,
@@ -85,8 +85,8 @@ export function useSSE(
       pollTimer = setInterval(async () => {
         if (destroyed) return;
         pollCount++;
-        // Only show degraded banner after 2 cycles (6s) to avoid flicker on slow connections
-        if (pollCount >= 2) setIsDegraded(true);
+        // Only show degraded banner after 4 cycles (12s) to avoid false positives on slow connections
+        if (pollCount >= 4) setIsDegraded(true);
         setIsConnected(false);
         try {
           const prog = await getProgram(programId!);

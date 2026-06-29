@@ -1,0 +1,65 @@
+import time
+import structlog
+from threading import Lock
+from typing import List, Optional, Dict, Any
+
+log = structlog.get_logger(__name__)
+
+class APIKeyBroker:
+    def __init__(self, keys: List[str], rate_limit_window: float = 0.6):
+        """
+        Thread-safe key manager that load-balances key usage and tracks failures.
+        
+        Args:
+            keys: List of raw API key strings.
+            rate_limit_window: Minimum seconds to wait before reusing the same key.
+        """
+        self.keys = [
+            {"key": k.strip(), "last_used": 0.0, "cooldown_until": 0.0}
+            for k in keys if k.strip()
+        ]
+        self.rate_limit_window = rate_limit_window
+        self.lock = Lock()
+
+    def get_key(self) -> str:
+        """
+        Thread-safe checkout of the next available healthy key.
+        Blocks until a key becomes eligible.
+        """
+        if not self.keys:
+            raise ValueError("No API keys configured in the broker.")
+            
+        while True:
+            with self.lock:
+                now = time.time()
+                # Find keys that are out of cooldown AND satisfy rate limit spacing
+                eligible = [
+                    k for k in self.keys
+                    if now >= k["cooldown_until"] and (now - k["last_used"]) >= self.rate_limit_window
+                ]
+                
+                if eligible:
+                    # Pick the one least recently used to balance load
+                    best = min(eligible, key=lambda x: x["last_used"])
+                    best["last_used"] = now
+                    return best["key"]
+                    
+            # Wait briefly to check again
+            time.sleep(0.1)
+
+    def report_failure(self, key: str, is_quota_exhausted: bool = False):
+        """
+        Stall an API key if it fails.
+        """
+        with self.lock:
+            for k in self.keys:
+                if k["key"] == key:
+                    now = time.time()
+                    if is_quota_exhausted:
+                        # lock out key for 1 hour
+                        k["cooldown_until"] = now + 3600
+                        log.warning("api_key_quota_exhausted_cooldown", key_suffix=key[-6:], cooldown_seconds=3600)
+                    else:
+                        # lock out for 30s for general api drops/transient rate limits
+                        k["cooldown_until"] = now + 30
+                        log.warning("api_key_transient_failure_cooldown", key_suffix=key[-6:], cooldown_seconds=30)
