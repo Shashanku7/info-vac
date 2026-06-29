@@ -114,7 +114,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#FAFAF9]">
-      <Toaster position="top-right" />
+      <Toaster position="bottom-right" />
 
       {/* Nav */}
       <header className="border-b border-border bg-white">
