@@ -8,11 +8,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RunnerStagePanel } from "@/components/analyst/RunnerStagePanel";
 import { ComparisonExportButton } from "@/components/analyst/ComparisonExportButton";
 import { EvidenceDrawer } from "./EvidenceDrawer";
-import { getExtractedFields, getProgramSources } from "@/lib/api";
+import { getExtractedFields, getProgramSources, sendComparisonChatMessage, getComparisonChatHistory } from "@/lib/api";
 import { parseNarrative, splitNarrativeSegments, buildReferencesFromFields } from "@/lib/narrative";
 import { CitationBadge } from "./CitationBadge";
 import { ProgressCardLoader } from "./ProgressCardLoader";
-import type { Comparison, ExtractedField } from "@/types/api";
+import { ChatWidget } from "./ChatWidget";
+import type { Comparison, ExtractedField, ChatMessage } from "@/types/api";
 
 // ── Comparison Results ───────────────────────────────────────────────────────
 function ComparisonResults({ result }: { result: Comparison }) {
@@ -24,6 +25,51 @@ function ComparisonResults({ result }: { result: Comparison }) {
   }>>([]);
   const [fetchingData, setFetchingData] = useState(false);
   const [drawerUrl, setDrawerUrl] = useState<string | null>(null);
+
+  // Comparison Chat States
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+
+  // Load chat history when comparison result changes
+  useEffect(() => {
+    if (result?.comparison_id) {
+      setChatMessages([]);
+      getComparisonChatHistory(result.comparison_id)
+        .then((hist) => {
+          if (hist?.messages) setChatMessages(hist.messages);
+        })
+        .catch(() => {});
+    }
+  }, [result?.comparison_id]);
+
+  const sendComparisonMessage = async (msg: string) => {
+    if (!result?.comparison_id) return;
+    const userMsg: ChatMessage = {
+      role: "user",
+      content: msg,
+      created_at: new Date().toISOString(),
+    };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setIsChatLoading(true);
+    try {
+      const resp = await sendComparisonChatMessage(result.comparison_id, msg);
+      const botMsg: ChatMessage = {
+        role: "assistant",
+        content: resp.reply,
+        created_at: new Date().toISOString(),
+      };
+      setChatMessages((prev) => [...prev, botMsg]);
+    } catch (err) {
+      const errMsg: ChatMessage = {
+        role: "assistant",
+        content: `⚠️ Failed to send message.`,
+        created_at: new Date().toISOString(),
+      };
+      setChatMessages((prev) => [...prev, errMsg]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (result) {
@@ -326,6 +372,16 @@ function ComparisonResults({ result }: { result: Comparison }) {
         sourceUrl={drawerUrl ?? ""}
         field={drawerField}
       />
+
+      {/* Comparative Chatbot */}
+      {result?.comparison_id && (
+        <ChatWidget
+          programId={result.comparison_id}
+          messages={chatMessages}
+          isLoading={isChatLoading}
+          onSend={sendComparisonMessage}
+        />
+      )}
     </div>
   );
 }

@@ -450,7 +450,7 @@ async def get_comparison(comparison_id: uuid.UUID, db: AsyncSession = Depends(ge
 # Chat / RAG
 # ---------------------------------------------------------------------------
 
-from backend.chat import ChatRequest, handle_chat_message
+from backend.chat import ChatRequest, handle_chat_message, handle_comparison_chat_message
 from backend.models import Conversation, Message
 from sqlalchemy import select
 
@@ -472,6 +472,47 @@ async def get_chat_history(
     """Retrieve chat history for a program."""
     conv_res = await db.execute(
         select(Conversation).where(Conversation.program_id == uuid.UUID(program_id))
+    )
+    conv = conv_res.scalars().first()
+    if not conv:
+        return {"messages": []}
+        
+    msg_res = await db.execute(
+        select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at.asc())
+    )
+    messages = msg_res.scalars().all()
+    
+    return {
+        "conversation_id": str(conv.id),
+        "messages": [
+            {
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat()
+            }
+            for m in messages
+        ]
+    }
+
+
+@app.post("/api/comparisons/{comparison_id}/chat")
+async def chat_with_comparison(
+    comparison_id: str,
+    body: ChatRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Ask a comparative question about the programs in this comparison."""
+    return await handle_comparison_chat_message(comparison_id, body, db)
+
+
+@app.get("/api/comparisons/{comparison_id}/chat")
+async def get_comparison_chat_history(
+    comparison_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Retrieve comparative chat history."""
+    conv_res = await db.execute(
+        select(Conversation).where(Conversation.program_id == uuid.UUID(comparison_id))
     )
     conv = conv_res.scalars().first()
     if not conv:

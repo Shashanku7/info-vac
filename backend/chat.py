@@ -228,3 +228,106 @@ async def handle_chat_message(program_id: str, body: ChatRequest, db: AsyncSessi
     await db.commit()
     
     return ChatResponse(conversation_id=str(conv.id), reply=reply_text)
+
+
+async def handle_comparison_chat_message(comparison_id: str, body: ChatRequest, db: AsyncSession) -> ChatResponse:
+    # 1. Fetch comparison object
+    cid = uuid.UUID(comparison_id)
+    from backend.models import Comparison, Program
+    comp_res = await db.execute(select(Comparison).where(Comparison.id == cid))
+    comp = comp_res.scalars().first()
+    if not comp:
+        raise ValueError("Comparison report not found.")
+        
+    # 2. Fetch or create conversation
+    conv_res = await db.execute(select(Conversation).where(Conversation.program_id == cid))
+    conv = conv_res.scalars().first()
+    if not conv:
+        # We reuse program_id column to store comparison_id for comparisons chat
+        conv = Conversation(id=uuid.uuid4(), program_id=cid)
+        db.add(conv)
+        await db.flush()
+        
+    # 3. Save User Message
+    user_msg = Message(id=uuid.uuid4(), conversation_id=conv.id, role="user", content=body.message)
+    db.add(user_msg)
+    await db.flush()
+
+    # 4. Fetch all compared programs data for side-by-side facts
+    pids = comp.program_ids or []
+    programs_context = []
+    
+    for pid_str in pids:
+        pid = uuid.UUID(pid_str)
+        prog_res = await db.execute(select(Program).where(Program.id == pid))
+        prog = prog_res.scalars().first()
+        prog_name = prog.name if prog else "Unknown Program"
+        
+        fields_res = await db.execute(
+            select(ExtractedField).where(
+                ExtractedField.program_id == pid,
+                ExtractedField.gate_passed == True,
+                ExtractedField.is_null == False
+            )
+        )
+        fields = ExtractedField.get_latest_only(fields_res.scalars().all())
+        fields_text = "\n".join([f"  - {f.category}.{f.field_name}: {f.field_value}" for f in fields])
+        
+        programs_context.append(
+            f"=== PROGRAM: {prog_name} ===\n"
+            f"{fields_text}\n"
+        )
+        
+    programs_facts_block = "\n".join(programs_context)
+    
+    # 5. Fetch chat history
+    msg_res = await db.execute(
+        select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at.desc()).limit(10)
+    )
+    history = list(reversed(msg_res.scalars().all()))
+
+    # 6. Format comparative synthesis narrative
+    analysis = comp.analysis_json or {}
+    exec_summary = analysis.get("executive_summary", "")
+    matrix_list = analysis.get("matrix", [])
+    matrix_text = "\n".join([
+        f"- Category: {m.get('category','')}\n  Rankings: {', '.join(m.get('rankings',[]))}\n  Rationale: {m.get('rationale','')}"
+        for m in matrix_list
+    ])
+    recommendations = analysis.get("strategic_recommendations", "")
+
+    system_prompt = (
+        "You are an expert loyalty program analyst. Answer the user's question comparing the loyalty programs.\n"
+        "Use ONLY the following verified facts, comparative matrix, and strategic overview to answer. If you don't know, say so.\n\n"
+        "=== STRATEGIC OVERVIEW ===\n"
+        f"Executive Summary: {exec_summary}\n\n"
+        f"Strategic Recommendations: {recommendations}\n\n"
+        "=== COMPETITIVE MATRIX RANKINGS ===\n"
+        f"{matrix_text}\n\n"
+        "=== DETAILED SIDE-BY-SIDE PROGRAM FACTS ===\n"
+        f"{programs_facts_block}\n"
+    )
+
+    client, model_name = _make_client()
+    messages = [{"role": "system", "content": system_prompt}]
+    for m in history:
+        messages.append({"role": m.role, "content": m.content})
+        
+    loop = asyncio.get_running_loop()
+    def _call_llm():
+        res = client.client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            temperature=0.2
+        )
+        return res.choices[0].message.content
+        
+    reply_text = await loop.run_in_executor(None, _call_llm)
+    
+    # 8. Save Assistant Reply
+    bot_msg = Message(id=uuid.uuid4(), conversation_id=conv.id, role="assistant", content=reply_text)
+    db.add(bot_msg)
+    await db.commit()
+    
+    return ChatResponse(conversation_id=str(conv.id), reply=reply_text)
+

@@ -115,8 +115,6 @@ export async function getEvolution(programId: string): Promise<Evolution> {
   return apiFetch<Evolution>(`/api/programs/${programId}/evolution`);
 }
 
-// ── Chat ──────────────────────────────────────────────────────────────────────
-
 /** Send a chat message and get a response. */
 export async function sendChatMessage(
   programId: string,
@@ -134,6 +132,24 @@ export async function getChatHistory(
   programId: string
 ): Promise<ChatHistory> {
   return apiFetch<ChatHistory>(`/api/programs/${programId}/chat`);
+}
+
+/** Send a chat message to a comparison and get a response. */
+export async function sendComparisonChatMessage(
+  comparisonId: string,
+  message: string
+): Promise<ChatResponse> {
+  return apiFetch<ChatResponse>(`/api/comparisons/${comparisonId}/chat`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
+/** Get chat history for a comparison. */
+export async function getComparisonChatHistory(
+  comparisonId: string
+): Promise<ChatHistory> {
+  return apiFetch<ChatHistory>(`/api/comparisons/${comparisonId}/chat`);
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────
