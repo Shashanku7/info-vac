@@ -40,16 +40,9 @@ async def get_program_evolution(program_id: uuid.UUID, db: AsyncSession = Depend
     if program is None:
         raise HTTPException(status_code=404, detail="Program not found")
 
-    # Find all program runs sharing the same name (case-insensitive)
-    from sqlalchemy import func
-    prog_runs_res = await db.execute(
-        select(Program).where(func.lower(Program.name) == func.lower(program.name))
-    )
-    run_ids = [p.id for p in prog_runs_res.scalars().all()]
-
     fields_res = await db.execute(
         select(ExtractedField).where(
-            ExtractedField.program_id.in_(run_ids),
+            ExtractedField.program_id == program_id,
             ExtractedField.gate_passed == True
         ).order_by(ExtractedField.created_at.asc())
     )
