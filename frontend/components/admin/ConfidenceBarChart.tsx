@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Award } from "lucide-react";
 
 interface ConfidenceBarChartProps {
   avgCorroboration: number;
@@ -24,55 +15,92 @@ export function ConfidenceBarChart({
   avgRecency,
   avgConfidence,
 }: ConfidenceBarChartProps) {
-  const data = [
-    { name: "Corroboration", value: avgCorroboration, weight: "50%" },
-    { name: "Authority", value: avgAuthority, weight: "30%" },
-    { name: "Recency", value: avgRecency, weight: "20%" },
-    { name: "Composite", value: avgConfidence, weight: "—" },
-  ];
+  const corrPct = Math.round(avgCorroboration * 100);
+  const authPct = Math.round(avgAuthority * 100);
+  const recPct  = Math.round(avgRecency * 100);
+  const compPct = Math.round(avgConfidence * 100);
 
-  const BAR_COLORS = ["#0F766E", "#0F766E", "#0F766E", "#F59E0B"];
+  // Determine highest/lowest parameters
+  const params = [
+    { name: "Corroboration", val: corrPct },
+    { name: "Authority", val: authPct },
+    { name: "Recency", val: recPct },
+  ];
+  const sorted = [...params].sort((a, b) => a.val - b.val);
+  const lowest = sorted[0]?.name ?? "—";
+  const highest = sorted[sorted.length - 1]?.name ?? "—";
 
   return (
-    <Card className="border-border shadow-none">
-      <CardHeader className="pb-2 pt-4 px-4">
-        <CardTitle className="text-xs font-medium text-muted-foreground">
+    <div
+      className="rounded-[10px] p-4 transition-all flex flex-col justify-between"
+      style={{
+        backgroundColor: "var(--kobie-ocean)",
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      <div>
+        <div
+          className="text-[10px] font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5"
+          style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--kobie-font-heading)" }}
+        >
+          <Award size={12} strokeWidth={1.5} style={{ color: "#fd7f4f" }} />
           Confidence Breakdown
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-4 pb-4">
-        <div className="h-40">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} barSize={18} margin={{ left: -20 }}>
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 10, fill: "#A8A29E" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                domain={[0, 1]}
-                tick={{ fontSize: 10, fill: "#A8A29E" }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(v) => `${Math.round(v * 100)}%`}
-              />
-              <Tooltip
-                contentStyle={{ fontSize: 11, border: "1px solid #E7E5E4" }}
-                formatter={(v) => [`${((v as number ?? 0) * 100).toFixed(1)}%`]}
-              />
-              <Bar dataKey="value" radius={[3, 3, 0, 0]}>
-                {data.map((_, i) => (
-                  <Cell key={i} fill={BAR_COLORS[i]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
         </div>
-        <p className="text-[10px] text-muted-foreground mt-1">
-          Formula: 0.5 × corroboration + 0.3 × authority + 0.2 × recency
+
+        {/* Big overall confidence stat */}
+        <div className="flex items-baseline gap-2 mb-3">
+          <p className="text-xl font-black text-white" style={{ fontFamily: "var(--kobie-font-heading)" }}>
+            {compPct}%
+          </p>
+          <span className="text-[9px] uppercase font-bold text-white/30 tracking-wider">
+            Average Confidence
+          </span>
+        </div>
+
+        {/* Horizontal parameters progress bars */}
+        <div className="space-y-2">
+          {/* Corroboration */}
+          <div className="space-y-0.5">
+            <div className="flex justify-between text-[9px] font-mono text-white/50">
+              <span>Corroboration</span>
+              <span>{corrPct}%</span>
+            </div>
+            <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${corrPct}%`, backgroundColor: "#fd7f4f" }} />
+            </div>
+          </div>
+
+          {/* Authority */}
+          <div className="space-y-0.5">
+            <div className="flex justify-between text-[9px] font-mono text-white/50">
+              <span>Authority</span>
+              <span>{authPct}%</span>
+            </div>
+            <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${authPct}%`, backgroundColor: "#fd7f4f" }} />
+            </div>
+          </div>
+
+          {/* Recency */}
+          <div className="space-y-0.5">
+            <div className="flex justify-between text-[9px] font-mono text-white/50">
+              <span>Recency</span>
+              <span>{recPct}%</span>
+            </div>
+            <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${recPct}%`, backgroundColor: "#5461c9" }} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Dynamic Q&A Insights Footer */}
+      <div className="pt-2.5 mt-2.5" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <p className="text-[9px] leading-relaxed text-white/45">
+          Highest metric: <strong style={{ color: "#10b981" }}>{highest}</strong> <br />
+          Lowest metric: <strong style={{ color: "#ef4444" }}>{lowest}</strong>
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

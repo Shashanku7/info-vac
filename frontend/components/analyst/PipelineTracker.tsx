@@ -240,10 +240,10 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
   const extractedCount = Object.keys(extractedMap).length;
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-4 font-sans text-stone-850">
+    <div className="w-full max-w-2xl mx-auto space-y-4" style={{ fontFamily: 'var(--kobie-font-body)' }}>
       {isDegraded && (
-        <Alert className="border-amber-200 bg-amber-50 py-2 shadow-sm rounded-lg">
-          <AlertDescription className="text-xs text-amber-700 font-medium">
+        <Alert variant="destructive" className="py-2 rounded-[8px]">
+          <AlertDescription className="text-xs font-medium" style={{ color: '#fbbf24' }}>
             Connection unstable — falling back to backup polling updates.
           </AlertDescription>
         </Alert>
@@ -252,51 +252,51 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
       {/* Vertical pipeline of 5 stages */}
       <div className="space-y-3 relative">
         {/* Stage 1: Discovering Sources */}
-        <div className={`border rounded-xl bg-white transition-all duration-200 shadow-sm ${activeStage === 1 ? "ring-1 ring-[#0F766E]/40 border-[#0F766E]/30" : "border-stone-200"}`}>
+        <div className="rounded-[10px] transition-all duration-200" style={{ backgroundColor: 'var(--kobie-ocean)', border: activeStage === 1 ? '1px solid rgba(253,127,79,0.45)' : '1px solid rgba(255,255,255,0.1)', boxShadow: activeStage === 1 ? '0 0 0 1px rgba(253,127,79,0.15)' : 'none' }}>
           <div
             onClick={() => toggleExpand(1)}
-            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-stone-50/50 rounded-t-xl sticky top-0 bg-white z-10"
+            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none rounded-t-[10px] sticky top-0 z-10" style={{ backgroundColor: 'var(--kobie-ocean)' }}
           >
             <div className="flex items-center gap-2.5">
               {activeStage === 1 ? (
-                <Loader2 size={16} className="animate-spin text-[#0F766E] shrink-0" />
+                <Loader2 size={16} className="animate-spin shrink-0" style={{ color: '#fd7f4f' }} />
               ) : activeStage > 1 ? (
-                <CheckCircle2 size={16} className="text-emerald-600 shrink-0 fill-emerald-50" />
+                <CheckCircle2 size={16} className="shrink-0" style={{ color: '#10b981' }} />
               ) : (
-                <Circle size={16} className="text-stone-300 shrink-0" />
+                <Circle size={16} className="shrink-0" style={{ color: 'rgba(255,255,255,0.2)' }} />
               )}
-              <span className={`text-xs font-semibold ${activeStage === 1 ? "text-[#0F766E]" : "text-stone-700"}`}>
+              <span className="text-xs font-bold" style={{ fontFamily: 'var(--kobie-font-heading)', color: activeStage === 1 ? '#fd7f4f' : 'rgba(255,255,255,0.7)' }}>
                 1. Discovering Sources
               </span>
               {stageTimes[1] > 0 && (
-                <span className="text-[10px] text-stone-400 font-mono">({stageTimes[1].toFixed(1)}s)</span>
+                <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>({stageTimes[1].toFixed(1)}s)</span>
               )}
             </div>
             <div className="flex items-center gap-2">
               {candidates.length > 0 && (
-                <span className="text-[10px] font-medium bg-stone-100 border border-stone-200 text-stone-600 px-1.5 py-0.5 rounded-md font-mono">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-[4px] font-bold" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.65)', border: '1px solid rgba(255,255,255,0.12)' }}>
                   {candidates.length} candidate{candidates.length !== 1 && "s"}
                 </span>
               )}
-              {expanded[1] ? <ChevronDown size={14} className="text-stone-400" /> : <ChevronRight size={14} className="text-stone-400" />}
+              {expanded[1] ? <ChevronDown size={14} style={{ color: 'rgba(255,255,255,0.3)' }} /> : <ChevronRight size={14} style={{ color: 'rgba(255,255,255,0.3)' }} />}
             </div>
           </div>
 
           {expanded[1] && (
-            <div className="px-4 pb-4 border-t border-stone-100 pt-3">
+            <div className="px-4 pb-4 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
               {/* Live discovery progress bar */}
               {candidates.length > 0 && (
                 <div className="mb-3 space-y-1">
-                  <div className="flex justify-between items-center text-[10px] text-stone-500 font-mono">
+                  <div className="flex justify-between items-center text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.4)' }}>
                     <span>Sources found</span>
-                    <span className="font-bold text-stone-700">
+                    <span className="font-bold" style={{ color: '#fd7f4f' }}>
                       {activeStage > 1 ? `${candidates.length} discovered` : `${candidates.length} discovered so far…`}
                     </span>
                   </div>
-                  <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
                     <div
-                      className="h-full bg-gradient-to-r from-[#0F766E] to-emerald-400 rounded-full animate-pulse transition-all duration-500"
-                      style={{ width: `${activeStage > 1 ? 100 : Math.min(100, (candidates.length / 40) * 100)}%` }}
+                      className="h-full rounded-full animate-pulse transition-all duration-500"
+                      style={{ width: `${activeStage > 1 ? 100 : Math.min(100, (candidates.length / 40) * 100)}%`, backgroundColor: '#fd7f4f' }}
                     />
                   </div>
                 </div>
@@ -304,11 +304,12 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
               <div
                 ref={(el) => { containers.current[1] = el; }}
                 onScroll={() => handleScroll(1)}
-                className="max-h-40 overflow-y-auto space-y-2 pr-1 custom-scrollbar border border-stone-100 rounded-lg p-2 bg-stone-50/30"
+                className="max-h-40 overflow-y-auto space-y-2 pr-1 rounded-[8px] p-2"
+                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
               >
                 {candidates.length === 0 ? (
-                  <div className="flex items-center gap-2 text-stone-400 text-xs py-1.5 px-2">
-                    <Loader2 size={12} className="animate-spin text-stone-400" />
+                  <div className="flex items-center gap-2 text-xs py-1.5 px-2" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                    <Loader2 size={12} className="animate-spin" style={{ color: '#fd7f4f' }} />
                     Searching Web indices...
                   </div>
                 ) : (
@@ -318,17 +319,20 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                       href={c.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="block p-2 rounded-lg border border-stone-200/60 bg-white hover:border-[#0F766E]/40 hover:shadow-[0_2px_8px_rgba(15,118,110,0.04)] transition-all group"
+                      className="block p-2 rounded-[6px] transition-all group"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(253,127,79,0.35)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(255,255,255,0.07)'; }}
                     >
                       <div className="flex items-center gap-2">
                         <Favicon url={c.url} />
-                        <span className="text-xs font-semibold text-stone-700 truncate group-hover:text-[#0F766E] transition-colors">
+                        <span className="text-xs font-semibold truncate" style={{ color: 'rgba(255,255,255,0.75)' }}>
                           {c.title || c.domain}
                         </span>
                       </div>
-                      <span className="text-[10px] text-stone-400 block font-mono mt-0.5 truncate">{c.domain}</span>
+                      <span className="text-[10px] block font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{c.domain}</span>
                       {c.snippet && (
-                        <p className="text-[10px] text-stone-500 mt-1 line-clamp-1 break-all">
+                        <p className="text-[10px] mt-1 line-clamp-1 break-all" style={{ color: 'rgba(255,255,255,0.35)' }}>
                           {c.snippet.replace(/\s+/g, " ").slice(0, 120)}
                         </p>
                       )}
@@ -336,7 +340,7 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                   ))
                 )}
               </div>
-              <div className="mt-2 flex justify-between items-center text-[10px] text-stone-400 px-1 font-mono">
+              <div className="mt-2 flex justify-between items-center text-[10px] px-1 font-mono" style={{ color: 'rgba(255,255,255,0.25)' }}>
                 <span>Sources discovered: {candidates.length}</span>
                 <span>Gathering candidates...</span>
               </div>
@@ -345,76 +349,85 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
         </div>
 
         {/* Stage 2: Crawling Sources */}
-        <div className={`border rounded-xl bg-white transition-all duration-200 shadow-sm ${activeStage === 2 ? "ring-1 ring-[#0F766E]/40 border-[#0F766E]/30" : "border-stone-200"}`}>
+        <div className="rounded-[10px] transition-all duration-200" style={{ backgroundColor: 'var(--kobie-ocean)', border: activeStage === 2 ? '1px solid rgba(253,127,79,0.45)' : '1px solid rgba(255,255,255,0.1)', boxShadow: activeStage === 2 ? '0 0 0 1px rgba(253,127,79,0.15)' : 'none' }}>
           <div
             onClick={() => toggleExpand(2)}
-            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-stone-50/50 rounded-t-xl sticky top-0 bg-white z-10"
+            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none rounded-t-[10px] sticky top-0 z-10" style={{ backgroundColor: 'var(--kobie-ocean)' }}
           >
             <div className="flex items-center gap-2.5">
               {activeStage === 2 ? (
-                <Loader2 size={16} className="animate-spin text-[#0F766E] shrink-0" />
+                <Loader2 size={16} className="animate-spin shrink-0" style={{ color: '#fd7f4f' }} />
               ) : activeStage > 2 ? (
-                <CheckCircle2 size={16} className="text-emerald-600 shrink-0 fill-emerald-50" />
+                <CheckCircle2 size={16} className="shrink-0" style={{ color: '#10b981' }} />
               ) : (
-                <Circle size={16} className="text-stone-300 shrink-0" />
+                <Circle size={16} className="shrink-0" style={{ color: 'rgba(255,255,255,0.2)' }} />
               )}
-              <span className={`text-xs font-semibold ${activeStage === 2 ? "text-[#0F766E]" : "text-stone-700"}`}>
+              <span className="text-xs font-bold" style={{ fontFamily: 'var(--kobie-font-heading)', color: activeStage === 2 ? '#fd7f4f' : 'rgba(255,255,255,0.7)' }}>
                 2. Crawling Sources
               </span>
               {stageTimes[2] > 0 && (
-                <span className="text-[10px] text-stone-400 font-mono">({stageTimes[2].toFixed(1)}s)</span>
+                <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>({stageTimes[2].toFixed(1)}s)</span>
               )}
             </div>
             <div className="flex items-center gap-2">
               {crawlsCount > 0 && (
-                <span className="text-[10px] font-medium bg-stone-100 border border-stone-200 text-stone-600 px-1.5 py-0.5 rounded-md font-mono">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-[4px] font-bold" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.65)', border: '1px solid rgba(255,255,255,0.12)' }}>
                   {crawlsSuccess} crawled / {crawlsFailed} failed
                 </span>
               )}
-              {expanded[2] ? <ChevronDown size={14} className="text-stone-400" /> : <ChevronRight size={14} className="text-stone-400" />}
+              {expanded[2] ? <ChevronDown size={14} style={{ color: 'rgba(255,255,255,0.3)' }} /> : <ChevronRight size={14} style={{ color: 'rgba(255,255,255,0.3)' }} />}
             </div>
           </div>
 
           {expanded[2] && (
-            <div className="px-4 pb-4 border-t border-stone-100 pt-3 space-y-3">
-              {/* Progress bar */}
+            <div className="px-4 pb-4 pt-3 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
               <div className="space-y-1">
-                <div className="flex justify-between items-center text-[10px] text-stone-500 font-mono">
+                <div className="flex justify-between items-center text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.4)' }}>
                   <span>Progress</span>
                   <span>{activeStage > 2 ? `${candidates.length} / ${candidates.length}` : `${crawlsCount} / ${candidates.length}`} pages crawled</span>
                 </div>
-                <Progress value={activeStage > 2 ? 100 : (candidates.length ? (crawlsCount / candidates.length) * 100 : 0)} className="h-1 bg-stone-100" />
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${activeStage > 2 ? 100 : (candidates.length ? (crawlsCount / candidates.length) * 100 : 0)}%`, backgroundColor: '#fd7f4f' }} />
+                </div>
               </div>
-
-              {/* Feed scroll container */}
               <div
                 ref={(el) => { containers.current[2] = el; }}
                 onScroll={() => handleScroll(2)}
-                className="max-h-40 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar border border-stone-100 rounded-lg p-2 bg-stone-50/30"
+                className="max-h-40 overflow-y-auto space-y-1.5 pr-1 rounded-[8px] p-2"
+                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
               >
                 {crawls.length === 0 ? (
-                  <div className="text-stone-400 text-xs py-1.5 px-2 font-mono">
+                  <div className="text-xs py-1.5 px-2 font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
                     Waiting for crawler session...
                   </div>
                 ) : (
                   crawls.map((c, i) => (
-                    <div key={i} className="flex items-start justify-between text-xs py-1.5 px-2 rounded border border-stone-200/40 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.01)]">
+                    <a
+                      key={i}
+                      href={c.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-start justify-between text-xs py-1.5 px-2 rounded-[5px] transition-all group block"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(253,127,79,0.35)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(255,255,255,0.06)'; }}
+                    >
                       <div className="flex items-center gap-2 truncate">
-                        {c.status === "active" ? (
-                          <Loader2 size={12} className="animate-spin text-[#0F766E] shrink-0" />
+                        {c.status === "active" && activeStage === 2 ? (
+                          <Loader2 size={12} className="animate-spin shrink-0" style={{ color: '#fd7f4f' }} />
                         ) : c.status === "success" ? (
-                          <span className="w-4 h-4 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0">
-                            <Check size={8} className="text-emerald-600" />
+                          <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                            <Check size={8} style={{ color: '#10b981' }} />
                           </span>
                         ) : (
-                          <AlertCircle size={12} className="text-red-500 shrink-0" />
+                          <AlertCircle size={12} className="shrink-0" style={{ color: '#ef4444' }} />
                         )}
-                        <span className="truncate font-medium text-stone-700">{c.title || c.domain}</span>
+                        <span className="truncate font-medium group-hover:underline" style={{ color: 'rgba(255,255,255,0.65)' }}>{c.title || c.domain}</span>
                       </div>
-                      <span className={`text-[10px] font-mono shrink-0 ml-2 ${c.status === "active" ? "text-[#0F766E] animate-pulse" : c.status === "success" ? "text-emerald-600" : "text-red-500"}`}>
-                        {c.status === "active" ? "crawling" : c.status === "success" ? "success" : c.reason || "failed"}
+                      <span className="text-[10px] font-mono shrink-0 ml-2" style={{ color: (c.status === "active" && activeStage === 2) ? '#fd7f4f' : c.status === "success" ? '#10b981' : '#ef4444' }}>
+                        {c.status === "active" ? (activeStage === 2 ? "crawling" : "failed") : c.status === "success" ? "success" : c.reason || "failed"}
                       </span>
-                    </div>
+                    </a>
                   ))
                 )}
               </div>
@@ -423,72 +436,71 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
         </div>
 
         {/* Stage 3: Sources Discovered */}
-        <div className={`border rounded-xl bg-white transition-all duration-200 shadow-sm ${activeStage === 3 ? "ring-1 ring-[#0F766E]/40 border-[#0F766E]/30" : "border-stone-200"}`}>
+        <div className="rounded-[10px] transition-all duration-200" style={{ backgroundColor: 'var(--kobie-ocean)', border: activeStage === 3 ? '1px solid rgba(253,127,79,0.45)' : '1px solid rgba(255,255,255,0.1)', boxShadow: activeStage === 3 ? '0 0 0 1px rgba(253,127,79,0.15)' : 'none' }}>
           <div
             onClick={() => toggleExpand(3)}
-            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-stone-50/50 rounded-t-xl sticky top-0 bg-white z-10"
+            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none rounded-t-[10px] sticky top-0 z-10" style={{ backgroundColor: 'var(--kobie-ocean)' }}
           >
             <div className="flex items-center gap-2.5">
               {activeStage === 3 ? (
-                <Loader2 size={16} className="animate-spin text-[#0F766E] shrink-0" />
+                <Loader2 size={16} className="animate-spin shrink-0" style={{ color: '#fd7f4f' }} />
               ) : activeStage > 3 ? (
-                <CheckCircle2 size={16} className="text-emerald-600 shrink-0 fill-emerald-50" />
+                <CheckCircle2 size={16} className="shrink-0" style={{ color: '#10b981' }} />
               ) : (
-                <Circle size={16} className="text-stone-300 shrink-0" />
+                <Circle size={16} className="shrink-0" style={{ color: 'rgba(255,255,255,0.2)' }} />
               )}
-              <span className={`text-xs font-semibold ${activeStage === 3 ? "text-[#0F766E]" : "text-stone-700"}`}>
+              <span className="text-xs font-bold" style={{ fontFamily: 'var(--kobie-font-heading)', color: activeStage === 3 ? '#fd7f4f' : 'rgba(255,255,255,0.7)' }}>
                 3. Sources Discovered
               </span>
               {stageTimes[3] > 0 && (
-                <span className="text-[10px] text-stone-400 font-mono">({stageTimes[3].toFixed(1)}s)</span>
+                <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>({stageTimes[3].toFixed(1)}s)</span>
               )}
             </div>
             <div className="flex items-center gap-2">
               {crawlsSuccess > 0 && (
-                <span className="text-[10px] font-medium bg-emerald-50 border border-emerald-200 text-emerald-700 px-1.5 py-0.5 rounded-md font-mono">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-[4px] font-bold" style={{ backgroundColor: 'rgba(16,185,129,0.08)', color: '#10b981', border: '1px solid rgba(16,185,129,0.15)' }}>
                   {crawlsSuccess} source{crawlsSuccess !== 1 && "s"} verified
                 </span>
               )}
-              {expanded[3] ? <ChevronDown size={14} className="text-stone-400" /> : <ChevronRight size={14} className="text-stone-400" />}
+              {expanded[3] ? <ChevronDown size={14} style={{ color: 'rgba(255,255,255,0.3)' }} /> : <ChevronRight size={14} style={{ color: 'rgba(255,255,255,0.3)' }} />}
             </div>
           </div>
 
           {expanded[3] && (
-            <div className="px-4 pb-4 border-t border-stone-100 pt-3 space-y-3">
-              {/* Stat grid */}
+            <div className="px-4 pb-4 pt-3 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
               <div className="grid grid-cols-4 gap-2 text-center">
-                <div className="bg-stone-50 border border-stone-150 p-2 rounded-lg">
-                  <div className="text-xs font-bold text-stone-750 font-mono">{candidates.length}</div>
-                  <div className="text-[9px] text-stone-500 uppercase">Discovered</div>
+                <div className="p-2 rounded-[6px] text-center" style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div className="text-xs font-bold font-mono" style={{ color: 'rgba(255,255,255,0.8)' }}>{candidates.length}</div>
+                  <div className="text-[9px] uppercase" style={{ color: 'rgba(255,255,255,0.35)' }}>Discovered</div>
                 </div>
-                <div className="bg-emerald-50 border border-emerald-100 p-2 rounded-lg">
-                  <div className="text-xs font-bold text-emerald-750 font-mono">{crawlsSuccess}</div>
-                  <div className="text-[9px] text-emerald-600 uppercase">Crawled</div>
+                <div className="p-2 rounded-[6px] text-center" style={{ backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                  <div className="text-xs font-bold font-mono" style={{ color: '#10b981' }}>{crawlsSuccess}</div>
+                  <div className="text-[9px] uppercase" style={{ color: '#10b981', opacity: 0.7 }}>Crawled</div>
                 </div>
-                <div className="bg-red-50 border border-red-100 p-2 rounded-lg">
-                  <div className="text-xs font-bold text-red-750 font-mono">{crawlsFailed}</div>
-                  <div className="text-[9px] text-red-600 uppercase">Failed</div>
+                <div className="p-2 rounded-[6px] text-center" style={{ backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <div className="text-xs font-bold font-mono" style={{ color: '#ef4444' }}>{crawlsFailed}</div>
+                  <div className="text-[9px] uppercase" style={{ color: '#ef4444', opacity: 0.7 }}>Failed</div>
                 </div>
-                <div className="bg-stone-50 border border-stone-150 p-2 rounded-lg">
-                  <div className="text-xs font-bold text-stone-500 font-mono">
+                <div className="p-2 rounded-[6px] text-center" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <div className="text-xs font-bold font-mono" style={{ color: 'rgba(255,255,255,0.4)' }}>
                     {Math.max(0, candidates.length - crawlsSuccess - crawlsFailed)}
                   </div>
-                  <div className="text-[9px] text-stone-400 uppercase">Ignored</div>
+                  <div className="text-[9px] uppercase" style={{ color: 'rgba(255,255,255,0.25)' }}>Ignored</div>
                 </div>
               </div>
-              {/* Progress bar */}
               <div className="space-y-1">
-                <div className="flex justify-between items-center text-[10px] text-stone-500 font-mono">
+                <div className="flex justify-between items-center text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.4)' }}>
                   <span>Verification Progress</span>
                   <span>{activeStage > 3 ? `${crawlsSuccess} / ${crawlsSuccess}` : `${crawlsSuccess} / ${candidates.length}`} active sources</span>
                 </div>
-                <Progress value={activeStage > 3 ? 100 : (candidates.length ? (crawlsSuccess / candidates.length) * 100 : 0)} className="h-1 bg-stone-100" />
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${activeStage > 3 ? 100 : (candidates.length ? (crawlsSuccess / candidates.length) * 100 : 0)}%`, backgroundColor: '#fd7f4f' }} />
+                </div>
               </div>
 
-              {/* Scrollable list of success pages */}
-              <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar border border-stone-100 rounded-lg p-2 bg-stone-50/30">
+              <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 rounded-[8px] p-2" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                 {crawls.filter(c => c.status === "success").length === 0 ? (
-                  <div className="text-stone-400 text-xs py-1.5 px-2 font-mono">
+                  <div className="text-xs py-1.5 px-2 font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
                     No sources successfully crawled yet.
                   </div>
                 ) : (
@@ -498,14 +510,17 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                       href={c.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 p-2 rounded-lg border border-stone-200/60 bg-white hover:border-[#0F766E]/40 hover:shadow-[0_2px_8px_rgba(15,118,110,0.04)] transition-all group"
+                      className="flex items-center gap-2 p-2 rounded-[6px] transition-all group"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(253,127,79,0.35)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(255,255,255,0.07)'; }}
                     >
                       <Favicon url={c.url} />
                       <div className="min-w-0 flex-1">
-                        <span className="text-xs font-semibold text-stone-700 truncate block group-hover:text-[#0F766E] transition-colors">
+                        <span className="text-xs font-semibold truncate block" style={{ color: 'rgba(255,255,255,0.75)' }}>
                           {c.title || c.domain}
                         </span>
-                        <span className="text-[9px] text-stone-400 font-mono block mt-0.5 truncate">{c.url}</span>
+                        <span className="text-[9px] font-mono block mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{c.url}</span>
                       </div>
                     </a>
                   ))
@@ -516,52 +531,54 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
         </div>
 
         {/* Stage 4: Extracting Fields */}
-        <div className={`border rounded-xl bg-white transition-all duration-200 shadow-sm ${activeStage === 4 ? "ring-1 ring-[#0F766E]/40 border-[#0F766E]/30" : "border-stone-200"}`}>
+        <div className="rounded-[10px] transition-all duration-200" style={{ backgroundColor: 'var(--kobie-ocean)', border: activeStage === 4 ? '1px solid rgba(253,127,79,0.45)' : '1px solid rgba(255,255,255,0.1)', boxShadow: activeStage === 4 ? '0 0 0 1px rgba(253,127,79,0.15)' : 'none' }}>
           <div
             onClick={() => toggleExpand(4)}
-            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-stone-50/50 rounded-t-xl sticky top-0 bg-white z-10"
+            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none rounded-t-[10px] sticky top-0 z-10" style={{ backgroundColor: 'var(--kobie-ocean)' }}
           >
             <div className="flex items-center gap-2.5">
               {activeStage > 4 || ["verifying", "verified", "narrating", "complete"].includes(pipelineStatus) ? (
-                <CheckCircle2 size={16} className="text-emerald-600 shrink-0 fill-emerald-50" />
+                <CheckCircle2 size={16} className="shrink-0" style={{ color: '#10b981' }} />
               ) : activeStage === 4 ? (
-                <Loader2 size={16} className="animate-spin text-[#0F766E] shrink-0" />
+                <Loader2 size={16} className="animate-spin shrink-0" style={{ color: '#fd7f4f' }} />
               ) : (
-                <Circle size={16} className="text-stone-300 shrink-0" />
+                <Circle size={16} className="shrink-0" style={{ color: 'rgba(255,255,255,0.2)' }} />
               )}
-              <span className={`text-xs font-semibold ${activeStage === 4 ? "text-[#0F766E]" : "text-stone-700"}`}>
+              <span className="text-xs font-bold" style={{ fontFamily: 'var(--kobie-font-heading)', color: activeStage === 4 ? '#fd7f4f' : 'rgba(255,255,255,0.7)' }}>
                 4. Extracting Fields
               </span>
               {stageTimes[4] > 0 && (
-                <span className="text-[10px] text-stone-400 font-mono">({stageTimes[4].toFixed(1)}s)</span>
+                <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>({stageTimes[4].toFixed(1)}s)</span>
               )}
             </div>
             <div className="flex items-center gap-2">
               {extractedCount > 0 && (
-                <span className="text-[10px] font-medium bg-stone-100 border border-stone-200 text-stone-600 px-1.5 py-0.5 rounded-md font-mono">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-[4px] font-bold" style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.65)', border: '1px solid rgba(255,255,255,0.12)' }}>
                   {extractedCount} / {ALL_FIELDS.length} fields
                 </span>
               )}
-              {expanded[4] ? <ChevronDown size={14} className="text-stone-400" /> : <ChevronRight size={14} className="text-stone-400" />}
+              {expanded[4] ? <ChevronDown size={14} style={{ color: 'rgba(255,255,255,0.3)' }} /> : <ChevronRight size={14} style={{ color: 'rgba(255,255,255,0.3)' }} />}
             </div>
           </div>
 
           {expanded[4] && (
-            <div className="px-4 pb-4 border-t border-stone-100 pt-3 space-y-3">
-              {/* Progress bar */}
+            <div className="px-4 pb-4 pt-3 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
               <div className="space-y-1">
-                <div className="flex justify-between items-center text-[10px] text-stone-500 font-mono">
+                <div className="flex justify-between items-center text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.4)' }}>
                   <span>Fields Extracted</span>
-                  <span>{extractedCount} / {ALL_FIELDS.length} fields</span>
+                  <span style={{ color: '#fd7f4f' }}>{extractedCount} / {ALL_FIELDS.length} fields</span>
                 </div>
-                <Progress value={(extractedCount / ALL_FIELDS.length) * 100} className="h-1 bg-stone-100" />
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(extractedCount / ALL_FIELDS.length) * 100}%`, backgroundColor: '#fd7f4f' }} />
+                </div>
               </div>
 
               {/* Scrollable list of fields */}
               <div
                 ref={(el) => { containers.current[4] = el; }}
                 onScroll={() => handleScroll(4)}
-                className="max-h-40 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar border border-stone-100 rounded-lg p-2 bg-stone-50/30"
+                className="max-h-40 overflow-y-auto space-y-1.5 pr-1 rounded-[8px] p-2"
+                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
               >
                 {ALL_FIELDS.map((f, i) => {
                   const stateVal = extractedMap[f.name];
@@ -570,26 +587,26 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                   const isCompleted = !!stateVal;
 
                   return (
-                    <div key={i} className="flex items-center justify-between text-xs py-1.5 px-2 rounded border border-stone-200/40 bg-white">
+                    <div key={i} className="flex items-center justify-between text-xs py-1.5 px-2 rounded-[5px]" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
                       <div className="flex items-center gap-2 truncate">
                         {isCompleted ? (
                           stateVal.status === "completed" ? (
-                            <span className="w-4 h-4 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0">
-                              <Check size={8} className="text-emerald-600" />
+                            <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                              <Check size={8} style={{ color: '#10b981' }} />
                             </span>
                           ) : (
-                            <AlertCircle size={12} className="text-red-500 shrink-0" />
+                            <AlertCircle size={12} className="shrink-0" style={{ color: '#ef4444' }} />
                           )
                         ) : activeStage === 4 && isCategoryActive ? (
-                          <Loader2 size={12} className="animate-spin text-[#0F766E] shrink-0" />
+                          <Loader2 size={12} className="animate-spin shrink-0" style={{ color: '#fd7f4f' }} />
                         ) : (
-                          <span className="w-3.5 h-3.5 rounded-full border border-stone-300 flex items-center justify-center shrink-0" />
+                          <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0" style={{ border: '1px solid rgba(255,255,255,0.15)' }} />
                         )}
-                        <span className="truncate font-medium text-stone-700">
+                        <span className="truncate font-medium" style={{ color: 'rgba(255,255,255,0.65)' }}>
                           {f.name.replace(/_/g, " ")}
                         </span>
                       </div>
-                      <span className="text-[9px] font-mono text-stone-400 uppercase shrink-0">
+                      <span className="text-[9px] font-mono uppercase shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>
                         {f.category}
                       </span>
                     </div>
@@ -600,14 +617,15 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
               {/* Live console box for retry/rate-limit status */}
               {extractingLogs.length > 0 && (
                 <div className="space-y-1 mt-3">
-                  <div className="text-[9px] text-stone-500 font-mono uppercase tracking-wider">Live Extraction Engine Status</div>
+                  <div className="text-[9px] font-mono uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.3)' }}>Live Extraction Engine Status</div>
                   <div 
                     ref={logsContainerRef}
-                    className="bg-stone-50/50 border border-stone-200 rounded-lg p-2.5 font-mono text-[10px] text-stone-600 space-y-1 max-h-24 overflow-y-auto custom-scrollbar"
+                    className="rounded-[6px] p-2.5 font-mono text-[10px] space-y-1 max-h-24 overflow-y-auto"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.55)' }}
                   >
                     {extractingLogs.map((logStr, i) => (
                       <div key={i} className="flex gap-2">
-                        <span className="text-[#0F766E] font-bold">»</span>
+                        <span className="font-bold" style={{ color: '#fd7f4f' }}>»</span>
                         <span className="break-all">{logStr}</span>
                       </div>
                     ))}
@@ -619,42 +637,41 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
         </div>
 
         {/* Stage 5: Finalizing Results */}
-        <div className={`border rounded-xl bg-white transition-all duration-200 shadow-sm ${activeStage === 5 ? "ring-1 ring-[#0F766E]/40 border-[#0F766E]/30" : "border-stone-200"}`}>
+        <div className="rounded-[10px] transition-all duration-200" style={{ backgroundColor: 'var(--kobie-ocean)', border: activeStage === 5 ? '1px solid rgba(253,127,79,0.45)' : '1px solid rgba(255,255,255,0.1)', boxShadow: activeStage === 5 ? '0 0 0 1px rgba(253,127,79,0.15)' : 'none' }}>
           <div
             onClick={() => toggleExpand(5)}
-            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-stone-50/50 rounded-t-xl sticky top-0 bg-white z-10"
+            className="flex items-center justify-between px-4 py-3 cursor-pointer select-none rounded-t-[10px] sticky top-0 z-10" style={{ backgroundColor: 'var(--kobie-ocean)' }}
           >
             <div className="flex items-center gap-2.5">
               {activeStage === 5 && pipelineStatus !== "complete" && pipelineStatus !== "failed" ? (
-                <Loader2 size={16} className="animate-spin text-[#0F766E] shrink-0" />
+                <Loader2 size={16} className="animate-spin shrink-0" style={{ color: '#fd7f4f' }} />
               ) : pipelineStatus === "complete" ? (
-                <CheckCircle2 size={16} className="text-emerald-600 shrink-0 fill-emerald-50" />
+                <CheckCircle2 size={16} className="shrink-0" style={{ color: '#10b981' }} />
               ) : pipelineStatus === "failed" ? (
-                <AlertCircle size={16} className="text-red-500 shrink-0" />
+                <AlertCircle size={16} className="shrink-0" style={{ color: '#ef4444' }} />
               ) : (
-                <Circle size={16} className="text-stone-300 shrink-0" />
+                <Circle size={16} className="shrink-0" style={{ color: 'rgba(255,255,255,0.2)' }} />
               )}
-              <span className={`text-xs font-semibold ${activeStage === 5 ? "text-[#0F766E]" : "text-stone-700"}`}>
+              <span className="text-xs font-bold" style={{ fontFamily: 'var(--kobie-font-heading)', color: activeStage === 5 ? '#fd7f4f' : 'rgba(255,255,255,0.7)' }}>
                 5. Finalizing Results
               </span>
               {stageTimes[5] > 0 && (
-                <span className="text-[10px] text-stone-400 font-mono">({stageTimes[5].toFixed(1)}s)</span>
+                <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>({stageTimes[5].toFixed(1)}s)</span>
               )}
             </div>
             <div className="flex items-center gap-2">
               {pipelineStatus === "complete" && (
-                <span className="text-[10px] font-medium bg-emerald-50 border border-emerald-200 text-emerald-700 px-1.5 py-0.5 rounded-md font-mono">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-[4px] font-bold" style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }}>
                   Complete
                 </span>
               )}
-              {expanded[5] ? <ChevronDown size={14} className="text-stone-400" /> : <ChevronRight size={14} className="text-stone-400" />}
+              {expanded[5] ? <ChevronDown size={14} style={{ color: 'rgba(255,255,255,0.3)' }} /> : <ChevronRight size={14} style={{ color: 'rgba(255,255,255,0.3)' }} />}
             </div>
           </div>
 
           {expanded[5] && (
-            <div className="px-4 pb-4 border-t border-stone-100 pt-3 space-y-4">
-              {/* Event-driven task checklist — each step tied to real SSE stage names */}
-              <div className="space-y-0 border border-stone-100 rounded-lg overflow-hidden">
+            <div className="px-4 pb-4 pt-3 space-y-4" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="space-y-0 rounded-[8px] overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
                 {[
                   {
                     label: "Running citation gate",
@@ -689,33 +706,36 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                 ].map((task, i) => (
                   <div
                     key={i}
-                    className={`flex items-start gap-3 px-3 py-2.5 border-b border-stone-100 last:border-0 transition-colors ${
-                      task.active ? "bg-[#0F766E]/5" : "bg-white"
-                    }`}
+                    className="flex items-start gap-3 px-3 py-2.5 last:border-0 transition-colors"
+                    style={{
+                      borderBottom: '1px solid rgba(255,255,255,0.06)',
+                      backgroundColor: task.active ? 'rgba(253,127,79,0.06)' : 'transparent'
+                    }}
                   >
                     {task.done ? (
-                      <span className="w-4 h-4 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0 mt-0.5">
-                        <Check size={8} className="text-emerald-600" />
+                      <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                        <Check size={8} style={{ color: '#10b981' }} />
                       </span>
                     ) : task.active ? (
-                      <Loader2 size={14} className="animate-spin text-[#0F766E] shrink-0 mt-0.5" />
+                      <Loader2 size={14} className="animate-spin shrink-0 mt-0.5" style={{ color: '#fd7f4f' }} />
                     ) : (
-                      <span className="w-4 h-4 rounded-full border border-stone-200 flex items-center justify-center shrink-0 mt-0.5" />
+                      <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ border: '1px solid rgba(255,255,255,0.15)' }} />
                     )}
                     <div>
-                      <span className={`text-xs font-medium block ${
-                        task.done ? "text-stone-400 line-through" : task.active ? "text-[#0F766E]" : "text-stone-600"
-                      }`}>
+                      <span className="text-xs font-medium block" style={{
+                        color: task.done ? 'rgba(255,255,255,0.25)' : task.active ? '#fd7f4f' : 'rgba(255,255,255,0.6)',
+                        textDecoration: task.done ? 'line-through' : 'none'
+                      }}>
                         {task.label}
                       </span>
                       {task.active && (
-                        <span className="text-[10px] text-stone-400 animate-pulse">{task.sublabel}</span>
+                        <span className="text-[10px] animate-pulse" style={{ color: 'rgba(255,255,255,0.35)' }}>{task.sublabel}</span>
                       )}
                     </div>
                     {task.active && (
                       <div className="ml-auto">
-                        <div className="h-1 w-16 bg-stone-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-[#0F766E]/40 rounded-full animate-pulse w-2/3" />
+                        <div className="h-1 w-16 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                          <div className="h-full rounded-full animate-pulse w-2/3" style={{ backgroundColor: 'rgba(253,127,79,0.4)' }} />
                         </div>
                       </div>
                     )}
@@ -725,35 +745,35 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
 
               {/* Completion Summary Card */}
               {pipelineStatus === "complete" && (
-                <div className="border border-emerald-100 bg-emerald-50/20 p-4 rounded-xl space-y-2.5 transition-all duration-300 animate-fadeIn">
+                <div className="p-4 rounded-[10px] space-y-2.5 transition-all duration-300" style={{ backgroundColor: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
                   <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center shrink-0">
-                      <Check size={10} className="text-emerald-700" />
+                    <span className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                      <Check size={10} style={{ color: '#10b981' }} />
                     </span>
-                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
+                    <span className="text-xs font-bold uppercase tracking-wide" style={{ fontFamily: 'var(--kobie-font-heading)', color: '#10b981' }}>
                       Research Complete
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-stone-600 border-t border-emerald-100/50 pt-2 font-mono">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs font-mono pt-2 mt-0.5" style={{ borderTop: '1px solid rgba(16,185,129,0.15)', color: 'rgba(255,255,255,0.6)' }}>
                     <div className="flex justify-between">
-                      <span className="text-stone-400">Sources discovered:</span>
-                      <span className="font-semibold text-stone-700">{candidates.length}</span>
+                      <span style={{ color: 'rgba(255,255,255,0.35)' }}>Sources discovered:</span>
+                      <span className="font-semibold" style={{ color: 'rgba(255,255,255,0.8)' }}>{candidates.length}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-stone-400">Successfully crawled:</span>
-                      <span className="font-semibold text-emerald-700">{crawlsSuccess}</span>
+                      <span style={{ color: 'rgba(255,255,255,0.35)' }}>Successfully crawled:</span>
+                      <span className="font-semibold" style={{ color: '#10b981' }}>{crawlsSuccess}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-stone-400">Failed/ignored:</span>
-                      <span className="font-semibold text-stone-700">{crawlsFailed}</span>
+                      <span style={{ color: 'rgba(255,255,255,0.35)' }}>Failed/ignored:</span>
+                      <span className="font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>{crawlsFailed}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-stone-400">Fields extracted:</span>
-                      <span className="font-semibold text-stone-700">{extractedCount} / {ALL_FIELDS.length}</span>
+                      <span style={{ color: 'rgba(255,255,255,0.35)' }}>Fields extracted:</span>
+                      <span className="font-semibold" style={{ color: 'rgba(255,255,255,0.8)' }}>{extractedCount} / {ALL_FIELDS.length}</span>
                     </div>
-                    <div className="flex justify-between col-span-2 border-t border-emerald-100/30 pt-1.5 mt-0.5">
-                      <span className="text-stone-450">Total execution time:</span>
-                      <span className="font-bold text-stone-700">
+                    <div className="flex justify-between col-span-2 pt-1.5 mt-0.5" style={{ borderTop: '1px solid rgba(16,185,129,0.12)' }}>
+                      <span style={{ color: 'rgba(255,255,255,0.35)' }}>Total execution time:</span>
+                      <span className="font-bold" style={{ color: '#fd7f4f' }}>
                         {displayTime.toFixed(1)}s
                       </span>
                     </div>

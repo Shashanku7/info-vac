@@ -1,5 +1,6 @@
 import time
 import structlog
+import threading
 from threading import Lock
 from typing import List, Optional, Dict, Any
 
@@ -20,6 +21,7 @@ class APIKeyBroker:
         ]
         self.rate_limit_window = rate_limit_window
         self.lock = Lock()
+        self.local_data = threading.local()
 
     def get_key(self) -> str:
         """
@@ -42,6 +44,7 @@ class APIKeyBroker:
                     # Pick the one least recently used to balance load
                     best = min(eligible, key=lambda x: x["last_used"])
                     best["last_used"] = now
+                    self.local_data.last_key = best["key"]
                     return best["key"]
                     
             # Wait briefly to check again
@@ -63,3 +66,11 @@ class APIKeyBroker:
                         # lock out for 30s for general api drops/transient rate limits
                         k["cooldown_until"] = now + 30
                         log.warning("api_key_transient_failure_cooldown", key_suffix=key[-6:], cooldown_seconds=30)
+
+    def report_last_key_failure(self, is_quota_exhausted: bool = False):
+        """
+        Report failure on the key that was last checked out in the current thread.
+        """
+        key = getattr(self.local_data, "last_key", None)
+        if key:
+            self.report_failure(key, is_quota_exhausted)

@@ -33,7 +33,7 @@ log = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Word count bounds (R7 — enforced in code, not LLM-trusted)
 # ---------------------------------------------------------------------------
-_MIN_WORDS = 200
+_MIN_WORDS = 500
 _MAX_WORDS = 1000
 
 
@@ -331,9 +331,9 @@ async def generate_narrative(
         total_scraped_sources = len(scraped_result.scalars().all())
 
         # Determine dynamic word bounds based on scraped sources volume (R7)
-        # If <= 3 sources, allow smaller brief (200-1000) to prevent LLM hallucinations.
+        # If < 7 sources, allow smaller brief (200-1000) to prevent LLM hallucinations.
         # Otherwise, write a full briefing (500-1000).
-        min_words = 500 if total_scraped_sources >= 4 else 200
+        min_words = 200 if total_scraped_sources < 7 else 500
         max_words = 1000
 
         log.info(

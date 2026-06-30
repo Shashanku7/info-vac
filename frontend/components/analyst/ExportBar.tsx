@@ -1,15 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileText, TableIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Download, FileText, TableIcon, Loader2 } from "lucide-react";
 import type { Narrative, ExtractedField } from "@/types/api";
-import { parseNarrative, splitNarrativeSegments, calculateWordCount, WATERMARK_TEXT } from "@/lib/narrative";
+import { API_BASE } from "@/lib/api";
+import {
+  parseNarrative,
+  splitNarrativeSegments,
+  buildReferencesFromFields,
+  calculateWordCount,
+  WATERMARK_TEXT,
+} from "@/lib/narrative";
 
 interface ExportBarProps {
   narrative?: Narrative | null;
   fields: ExtractedField[];
   programName: string;
+}
+
+interface LocalSource {
+  id?: string;
+  url: string;
+  source_type?: string;
 }
 
 function exportCSV(fields: ExtractedField[], programName: string) {
@@ -43,71 +55,150 @@ function exportCSV(fields: ExtractedField[], programName: string) {
   const a = document.createElement("a");
   a.href = url;
   a.download = `${programName.replace(/\s+/g, "_")}_fields.csv`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function exportPDF(narrative: Narrative, fields: ExtractedField[], programName: string) {
-  const { pdf, Document, Page, Text, View, StyleSheet, Link } = await import(
+// ── Shared styles used by both Single and Compare PDF layouts ──
+const createSharedStyles = (StyleSheet: any) =>
+  StyleSheet.create({
+    page: { padding: 40, fontFamily: "Helvetica", backgroundColor: "#FAFAF9" },
+    header: { marginBottom: 12, borderBottom: "2px solid #FD7F4F", paddingBottom: 8 },
+    headerTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 6 },
+    title: { fontSize: 15, fontFamily: "Helvetica-Bold", color: "#051C2C" },
+    logoContainer: { flexDirection: "row", alignItems: "center" },
+    logoText: { fontSize: 14, fontFamily: "Helvetica-Bold", color: "#051C2C" },
+    subtitle: { fontSize: 9, color: "#666666" },
+    sectionHeading: { fontSize: 11, fontFamily: "Helvetica-Bold", color: "#051C2C", marginTop: 18, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
+    body: { fontSize: 9.5, lineHeight: 1.6, color: "#051C2C" },
+    bodyWrap: { marginBottom: 12 },
+    h2: { fontSize: 12, fontFamily: "Helvetica-Bold", color: "#051C2C", marginTop: 16, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
+    h3: { fontSize: 10.5, fontFamily: "Helvetica-Bold", color: "#051C2C", marginTop: 12, marginBottom: 4 },
+    paragraph: { fontSize: 10, lineHeight: 1.7, color: "#051C2C", marginBottom: 12 },
+    citationLink: { fontSize: 8.5, color: "#FD7F4F", fontFamily: "Helvetica-Bold", textDecoration: "none" },
+    
+    // Table layout styles (Comparison specific)
+    table: { marginTop: 10, marginBottom: 15, border: "1px solid #FD7F4F", borderRadius: 4, overflow: "hidden" },
+    tableHeaderRow: { flexDirection: "row", backgroundColor: "#051C2C", padding: 6, borderBottom: "1px solid #FD7F4F" },
+    tableRow: { flexDirection: "row", borderBottom: "1px solid #F6E2D9", minHeight: 28, backgroundColor: "#FFFFFF" },
+    tableRowAlt: { flexDirection: "row", borderBottom: "1px solid #F6E2D9", minHeight: 28, backgroundColor: "#FFF9F6" },
+    tableHeaderCell: { color: "#FFFFFF", fontSize: 8.5, fontFamily: "Helvetica-Bold", padding: 4 },
+    tableCellCategory: { fontSize: 8.5, fontFamily: "Helvetica-Bold", color: "#051C2C", padding: 5, borderRight: "1px solid #F6E2D9", backgroundColor: "#FFF2EC" },
+    tableCellContent: { fontSize: 8, color: "#051C2C", padding: 5, borderRight: "1px solid #F6E2D9" },
+    rankBadge: { fontSize: 7.5, fontWeight: "bold", color: "#666666", marginBottom: 3 },
+
+    // Highlights column styles (Comparison specific)
+    highlightsContainer: { flexDirection: "column", gap: 12, marginTop: 10, marginBottom: 15 },
+    highlightCol: { marginBottom: 10 },
+    highlightColTitle: { fontSize: 10, fontWeight: "bold", color: "#051C2C", marginBottom: 4 },
+    highlightItem: { fontSize: 8, color: "#666666", marginBottom: 4, lineHeight: 1.4 },
+
+    // References styles
+    refSection: { marginTop: 0, paddingTop: 0 },
+    refHeading: { fontSize: 10, fontWeight: "bold", color: "#051C2C", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 },
+    refItem: { flexDirection: "row", gap: 6, marginBottom: 8 },
+    refNum: { fontSize: 8, fontWeight: "bold", color: "#FD7F4F", width: 18, textAlign: "right" },
+    refBlock: { flex: 1, gap: 1 },
+    refLabel: { fontSize: 8, color: "#666666", fontWeight: "bold", width: 80, flexShrink: 0 },
+    refValue: { fontSize: 8, color: "#051C2C", flex: 1 },
+    refRow: { flexDirection: "row", gap: 4 },
+    refQuote: { fontSize: 8, color: "#666666", fontStyle: "italic", flex: 1 },
+    watermark: { fontSize: 7.5, color: "#A8A29E", marginTop: 24, textAlign: "center" },
+  });
+
+// ── Export helper for Single Program Briefs ──
+export async function exportPDF(narrative: Narrative, fields: ExtractedField[], programName: string) {
+  const { pdf, Document, Page, Text, View, StyleSheet, Link, Svg, Path } = await import(
     "@react-pdf/renderer"
   );
 
-  // ── Single source of truth: use the same parseNarrative used by the UI ──
   const { urlMap, references } = parseNarrative(narrative.narrative, fields);
+  const styles = createSharedStyles(StyleSheet);
 
-  const styles = StyleSheet.create({
-    page: { padding: 48, fontFamily: "Helvetica", backgroundColor: "#FAFAF9" },
-    header: { marginBottom: 24, borderBottom: "1px solid #E7E5E4", paddingBottom: 12 },
-    title: { fontSize: 18, fontWeight: "bold", color: "#1C1917", marginBottom: 4 },
-    subtitle: { fontSize: 10, color: "#57534E" },
-    body: { fontSize: 10, lineHeight: 1.75, color: "#1C1917" },
-    bodyWrap: { marginBottom: 24 },
-    citationLink: { fontSize: 9, color: "#0F766E", fontWeight: "bold", textDecoration: "underline" },
-    refSection: { marginTop: 24, borderTop: "1px solid #E7E5E4", paddingTop: 16 },
-    refHeading: { fontSize: 11, fontWeight: "bold", color: "#1C1917", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 },
-    refItem: { flexDirection: "row", gap: 8, marginBottom: 10 },
-    refNum: { fontSize: 9, fontWeight: "bold", color: "#0F766E", width: 20, textAlign: "right" },
-    refBlock: { flex: 1, gap: 2 },
-    refLabel: { fontSize: 9, color: "#78716C", fontWeight: "bold", width: 90, flexShrink: 0 },
-    refValue: { fontSize: 9, color: "#44403C", flex: 1 },
-    refRow: { flexDirection: "row", gap: 4 },
-    refQuote: { fontSize: 9, color: "#57534E", fontStyle: "italic", flex: 1 },
-    watermark: { fontSize: 8, color: "#A8A29E", marginTop: 32, textAlign: "center" },
-  });
-
-  // Build narrative body: same segment logic as the UI (splitNarrativeSegments)
   function buildBodyNodes(text: string) {
-    const segments = splitNarrativeSegments(text, urlMap);
-    return segments.map((seg, idx) =>
-      seg.type === "text" ? (
-        <Text key={`t${idx}`} style={styles.body}>{seg.text}</Text>
-      ) : (
-        <Link key={`l${idx}`} src={`#ref-${seg.num}`} style={styles.citationLink}>
-          [{seg.num}]
-        </Link>
-      )
-    );
+    const paragraphs = text.split(/\n{2,}/);
+    return paragraphs.map((para, i) => {
+      const trimmed = para.trim();
+      if (!trimmed) return null;
+
+      const h2Match = trimmed.match(/^##\s+(.+)/);
+      const h3Match = trimmed.match(/^###\s+(.+)/);
+
+      if (h2Match) {
+        return (
+          <Text key={`h2-${i}`} style={styles.h2}>
+            {h2Match[1]}
+          </Text>
+        );
+      } else if (h3Match) {
+        return (
+          <Text key={`h3-${i}`} style={styles.h3}>
+            {h3Match[1]}
+          </Text>
+        );
+      } else {
+        const segments = splitNarrativeSegments(trimmed, urlMap);
+        return (
+          <Text key={`p-${i}`} style={styles.paragraph}>
+            {segments.map((seg, idx) =>
+              seg.type === "text" ? (
+                seg.text
+              ) : (
+                <Link key={`l${idx}`} src={`#ref-${seg.num}`} style={styles.citationLink}>
+                  {" "}[{seg.num}]
+                </Link>
+              )
+            )}
+          </Text>
+        );
+      }
+    });
   }
 
-  const PDFDoc = () => (
-    <Document title={`${programName} — InfoVac Analyst Brief`}>
-      <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>{programName}</Text>
-          <Text style={styles.subtitle}>
-            InfoVac Competitive Intelligence · {new Date().toLocaleDateString("en-GB")} ·{" "}
-            {calculateWordCount(narrative.narrative)} words
-          </Text>
+  const PageHeader = () => (
+    <View fixed style={styles.header}>
+      <View style={styles.headerTopRow}>
+        <Text style={styles.title}>{programName}</Text>
+        <View style={styles.logoContainer}>
+          <Text style={styles.logoText}>Kobie</Text>
+          <Svg width={9} height={9} viewBox="0 0 24 24" style={{ marginLeft: 2 }}>
+            <Path
+              d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+              fill="#FD7F4F"
+            />
+          </Svg>
         </View>
+      </View>
+      <Text style={styles.subtitle}>
+        Kobie Competitive Intelligence · {new Date().toLocaleDateString("en-GB")} ·{" "}
+        {calculateWordCount(narrative.narrative)} words
+      </Text>
+    </View>
+  );
 
-        {/* Body */}
-        <Text style={styles.bodyWrap}>
-          {buildBodyNodes(narrative.narrative)}
-        </Text>
+  const PDFWatermark = () => (
+    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 30, marginBottom: 10 }}>
+      <View style={{ flex: 1, height: 1, backgroundColor: "#E7E5E4" }} />
+      <Text style={{ fontSize: 7.5, color: "#A8A29E", fontFamily: "Helvetica", paddingHorizontal: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
+        {WATERMARK_TEXT}
+      </Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: "#E7E5E4" }} />
+    </View>
+  );
 
-        {/* References — built from the same parsed data as the UI */}
-        {references.length > 0 && (
+  const PDFDoc = () => (
+    <Document title={`${programName} — Kobie Intelligence Brief`}>
+      <Page size="A4" style={styles.page}>
+        <PageHeader />
+        {buildBodyNodes(narrative.narrative).filter(Boolean)}
+        {references.length === 0 && <PDFWatermark />}
+      </Page>
+
+      {references.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          <PageHeader />
           <View style={styles.refSection}>
             <Text style={styles.refHeading}>References</Text>
             {references.map((ref) => {
@@ -125,7 +216,7 @@ async function exportPDF(narrative: Narrative, fields: ExtractedField[], program
                   <View style={styles.refBlock}>
                     <View style={styles.refRow}>
                       <Text style={styles.refLabel}>Source</Text>
-                      <Text style={[styles.refValue, { color: "#0F766E" }]}>{displayUrl}</Text>
+                      <Text style={[styles.refValue, { color: "#FD7F4F", textDecoration: "none" }]}>{displayUrl}</Text>
                     </View>
                     <View style={styles.refRow}>
                       <Text style={styles.refLabel}>Evidence Quote</Text>
@@ -140,12 +231,9 @@ async function exportPDF(narrative: Narrative, fields: ExtractedField[], program
               );
             })}
           </View>
-        )}
-
-        <Text style={styles.watermark}>
-          {WATERMARK_TEXT}
-        </Text>
-      </Page>
+          <PDFWatermark />
+        </Page>
+      )}
     </Document>
   );
 
@@ -157,7 +245,259 @@ async function exportPDF(narrative: Narrative, fields: ExtractedField[], program
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── Export helper for Multi-Program Comparisons (Consolidated) ──
+export async function exportComparisonPDF(comparison: any, programNames: string[]) {
+  const { pdf, Document, Page, Text, View, StyleSheet, Link, Svg, Path } = await import(
+    "@react-pdf/renderer"
+  );
+
+  // 1. Fetch fields and sources for all compared programs in parallel
+  const programData = await Promise.all(
+    comparison.program_ids.map(async (pid: string) => {
+      const [fieldsRes, sourcesRes] = await Promise.all([
+        fetch(`${API_BASE}/api/programs/${pid}/fields`),
+        fetch(`${API_BASE}/api/programs/${pid}/sources`),
+      ]);
+      const fields: ExtractedField[] = fieldsRes.ok ? await fieldsRes.json() : [];
+      const sources: LocalSource[] = sourcesRes.ok ? await sourcesRes.json() : [];
+      return { id: pid, fields, sources };
+    })
+  );
+
+  // Combine all fields and sources to resolve citations from either program
+  const allFields = programData.flatMap((p) => p.fields);
+  const allSources = programData.flatMap((p) => p.sources);
+
+  // Map source ID to URL for reference lookup
+  const url_by_source_id: Record<string, string> = {};
+  allSources.forEach((src) => {
+    if (src.id) url_by_source_id[String(src.id)] = src.url;
+  });
+
+  const analysis = comparison.analysis;
+  const { urlMap, references } = buildReferencesFromFields(allFields);
+
+  const wordCount = (() => {
+    let text = analysis.executive_summary || "";
+    analysis.matrix.forEach((item: any) => {
+      text += " " + (item.rationale || "");
+    });
+    return calculateWordCount(text);
+  })();
+
+  const styles = createSharedStyles(StyleSheet);
+
+  // Citation parser helper
+  function buildTextWithCitations(text: string) {
+    const cleanText = text.replace(/\[[a-zA-Z0-9_]+\]/g, "").replace(/\s{2,}/g, " ");
+    const segments = splitNarrativeSegments(cleanText, urlMap);
+    return segments.map((seg, idx) =>
+      seg.type === "text" ? (
+        seg.text
+      ) : (
+        <Link key={`l${idx}`} src={`#ref-${seg.num}`} style={styles.citationLink}>
+          {" "}[{seg.num}]
+        </Link>
+      )
+    );
+  }
+
+  const keyFieldsList = [
+    { label: "Base Earn Rate", name: "base_earn_rate" },
+    { label: "Minimum Redemption", name: "minimum_redemption" },
+    { label: "Points Expiry Policy", name: "expiry_policy" },
+    { label: "Mobile App Rating", name: "app_store_rating" },
+    { label: "Loyalty Tiers Enabled", name: "has_tiers" },
+  ];
+
+  const categoryWidth = "24%";
+  const programColWidth = `${76 / programNames.length}%`;
+
+  const PageHeader = () => (
+    <View fixed style={styles.header}>
+      <View style={styles.headerTopRow}>
+        <Text style={styles.title}>Strategic Competitive Comparison</Text>
+        <View style={styles.logoContainer}>
+          <Text style={styles.logoText}>Kobie</Text>
+          <Svg width={9} height={9} viewBox="0 0 24 24" style={{ marginLeft: 2 }}>
+            <Path
+              d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+              fill="#FD7F4F"
+            />
+          </Svg>
+        </View>
+      </View>
+      <Text style={styles.subtitle}>
+        Kobie Competitive Intelligence Report · {programNames.join(" vs ")} · {new Date().toLocaleDateString("en-GB")} · {wordCount} words
+      </Text>
+    </View>
+  );
+
+  const PDFWatermark = () => (
+    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 30, marginBottom: 10 }}>
+      <View style={{ flex: 1, height: 1, backgroundColor: "#E7E5E4" }} />
+      <Text style={{ fontSize: 7.5, color: "#A8A29E", fontFamily: "Helvetica", paddingHorizontal: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
+        {WATERMARK_TEXT}
+      </Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: "#E7E5E4" }} />
+    </View>
+  );
+
+  const PDFDoc = () => (
+    <Document title={`Competitive Matrix — ${programNames.join(" vs ")}`}>
+      <Page size="A4" style={styles.page}>
+        <PageHeader />
+
+        {/* Executive Summary */}
+        <Text style={styles.sectionHeading}>Executive Summary</Text>
+        <View style={styles.bodyWrap}>
+          <Text style={styles.body}>
+            {buildTextWithCitations(analysis.executive_summary)}
+          </Text>
+        </View>
+
+        {/* Comparison Table */}
+        <Text style={styles.sectionHeading}>Market Matrix Table</Text>
+        <View style={styles.table}>
+          <View style={styles.tableHeaderRow}>
+            <Text style={[styles.tableHeaderCell, { width: "24%" }]}>Category</Text>
+            <Text style={[styles.tableHeaderCell, { width: "76%" }]}>Comparative Analysis</Text>
+          </View>
+
+          {analysis.matrix.map((item: any, i: number) => {
+            const isAlt = i % 2 !== 0;
+            return (
+              <View key={i} wrap={false} style={isAlt ? styles.tableRowAlt : styles.tableRow}>
+                <Text style={[styles.tableCellCategory, { width: "24%" }]}>{item.category}</Text>
+                <View style={[styles.tableCellContent, { width: "76%", borderRightWidth: 0 }]}>
+                  <Text style={styles.body}>
+                    {buildTextWithCitations(item.rationale)}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Detailed Parameters Table */}
+        <Text style={styles.sectionHeading}>Side-by-Side Parameters</Text>
+        <View style={styles.table}>
+          <View style={styles.tableHeaderRow}>
+            <Text style={[styles.tableHeaderCell, { width: categoryWidth }]}>Loyalty Parameter</Text>
+            {programNames.map((name, i) => (
+              <Text key={i} style={[styles.tableHeaderCell, { width: programColWidth }]}>{name}</Text>
+            ))}
+          </View>
+
+          {keyFieldsList.map((fItem, i) => {
+            const isAlt = i % 2 !== 0;
+            return (
+              <View key={i} wrap={false} style={isAlt ? styles.tableRowAlt : styles.tableRow}>
+                <Text style={[styles.tableCellCategory, { width: categoryWidth }]}>{fItem.label}</Text>
+                {programNames.map((_, pIdx) => {
+                  const field = programData[pIdx]?.fields.find((f) => f.field_name === fItem.name);
+                  const val = field?.field_value || "—";
+                  const num = field?.source_url ? urlMap.get(field.source_url) : null;
+                  return (
+                    <View key={pIdx} style={[styles.tableCellContent, { width: programColWidth }]}>
+                      <Text style={styles.body}>
+                        {val}
+                        {num && (
+                          <Link src={`#ref-${num}`} style={styles.citationLink}>
+                            {" "}[{num}]
+                          </Link>
+                        )}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Individual Highlights */}
+        <Text style={styles.sectionHeading}>Program Highlights</Text>
+        <View style={styles.highlightsContainer}>
+          {programNames.map((pName, pIdx) => (
+            <View key={pIdx} wrap={false} style={styles.highlightCol}>
+              <Text style={styles.highlightColTitle}>{pName} Highlights</Text>
+              {programData[pIdx]?.fields
+                .filter((f: any) => f.gate_passed && !f.is_null && f.field_value && f.category !== "program_basics")
+                .slice(0, 5)
+                .map((f: any, fi: number) => {
+                  const num = f.source_url ? urlMap.get(f.source_url) : null;
+                  return (
+                    <Text key={fi} style={styles.highlightItem}>
+                      • <Text style={{ fontWeight: "bold" }}>{f.field_name.replace(/_/g, " ")}</Text>: {f.field_value}
+                      {num && (
+                        <Link src={`#ref-${num}`} style={styles.citationLink}>
+                          {" "}[{num}]
+                        </Link>
+                      )}
+                    </Text>
+                  );
+                })}
+            </View>
+          ))}
+        </View>
+
+        {references.length === 0 && <PDFWatermark />}
+      </Page>
+
+      {references.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          <PageHeader />
+          <View style={styles.refSection}>
+            <Text style={styles.refHeading}>References</Text>
+            {references.map((ref: any) => {
+              const accessDate = ref.accessDate ?? "—";
+              const snippet = ref.snippet
+                ? `"${ref.snippet.slice(0, 150)}${ref.snippet.length > 150 ? "…" : ""}"`
+                : "—";
+              const displayUrl = ref.url.length > 70 ? ref.url.slice(0, 70) + "..." : ref.url;
+
+              return (
+                <View key={ref.url} wrap={false} style={styles.refItem} id={`ref-${ref.num}`}>
+                  <Link src={ref.url} style={[styles.refNum, { textDecoration: "none" }]}>
+                    [{ref.num}]
+                  </Link>
+                  <View style={styles.refBlock}>
+                    <View style={styles.refRow}>
+                      <Text style={styles.refLabel}>Source</Text>
+                      <Text style={[styles.refValue, { color: "#FD7F4F", textDecoration: "none" }]}>{displayUrl}</Text>
+                    </View>
+                    <View style={styles.refRow}>
+                      <Text style={styles.refLabel}>Evidence Quote</Text>
+                      <Text style={styles.refQuote}>{snippet}</Text>
+                    </View>
+                    <View style={styles.refRow}>
+                      <Text style={styles.refLabel}>Access Date</Text>
+                      <Text style={styles.refValue}>{accessDate}</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+          <PDFWatermark />
+        </Page>
+      )}
+    </Document>
+  );
+
+  const blob = await pdf(<PDFDoc />).toBlob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Competitive_Analysis_${programNames.join("_vs_")}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function ExportBar({ narrative, fields, programName }: ExportBarProps) {
@@ -176,28 +516,58 @@ export function ExportBar({ narrative, fields, programName }: ExportBarProps) {
   return (
     <div className="flex items-center gap-2">
       {narrative && (
-        <Button
-          variant="outline"
-          size="sm"
+        <button
           onClick={handlePDF}
           disabled={pdfLoading}
-          className="h-8 text-xs gap-1.5 border-border"
+          className="flex items-center gap-1.5 h-8 px-3 text-xs font-bold transition-all rounded-[3px]"
+          style={{
+            fontFamily: "var(--kobie-font-heading)",
+            color: "rgba(255,255,255,0.55)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "transparent",
+            cursor: "pointer",
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.color = "#fd7f4f";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(253,127,79,0.4)";
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.55)";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
+          }}
         >
-          <FileText size={13} strokeWidth={1.5} />
+          {pdfLoading ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <FileText size={11} strokeWidth={1.5} />
+          )}
           {pdfLoading ? "Generating…" : "Export PDF"}
-        </Button>
+        </button>
       )}
 
       {fields.length > 0 && (
-        <Button
-          variant="outline"
-          size="sm"
+        <button
           onClick={() => exportCSV(fields, programName)}
-          className="h-8 text-xs gap-1.5 border-border"
+          className="flex items-center gap-1.5 h-8 px-3 text-xs font-bold transition-all rounded-[3px]"
+          style={{
+            fontFamily: "var(--kobie-font-heading)",
+            color: "rgba(255,255,255,0.55)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "transparent",
+            cursor: "pointer",
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.color = "#fd7f4f";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(253,127,79,0.4)";
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.55)";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
+          }}
         >
-          <TableIcon size={13} strokeWidth={1.5} />
+          <TableIcon size={11} strokeWidth={1.5} />
           Export CSV
-        </Button>
+        </button>
       )}
     </div>
   );

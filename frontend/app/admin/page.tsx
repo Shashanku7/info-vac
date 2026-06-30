@@ -2,23 +2,22 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { RefreshCw, Activity, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { RefreshCw, Loader2, BarChart2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CostCard } from "@/components/admin/CostCard";
+import { Input } from "@/components/ui/input";
 import { GateDonutChart } from "@/components/admin/GateDonutChart";
 import { ConfidenceBarChart } from "@/components/admin/ConfidenceBarChart";
 import { SourceTracker } from "@/components/admin/SourceTracker";
 import { ComparatorPicker } from "@/components/admin/ComparatorPicker";
 import { FieldsGrid } from "@/components/analyst/FieldsGrid";
-import { checkHealth, getProgram } from "@/lib/api";
+import { checkHealth } from "@/lib/api";
 import { API_BASE } from "@/lib/api";
 import type { Program, ExtractedField } from "@/types/api";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 
-// ── Derived stats helpers ─────────────────────────────────────────────────────
+// ── Derived stats helpers ──
 
 function deriveStats(fields: ExtractedField[]) {
   const gateFields = fields.filter((f) => f.gate_passed !== null);
@@ -46,7 +45,7 @@ function deriveStats(fields: ExtractedField[]) {
   return { passed, failed, avgConf, avgCorr, avgAuth, avgRec };
 }
 
-// ── Placeholder: fetch all programs (replace with real endpoint when available)
+// ── Fetchers ──
 
 async function fetchPrograms(): Promise<Program[]> {
   try {
@@ -68,14 +67,13 @@ async function fetchAllFields(): Promise<ExtractedField[]> {
   }
 }
 
-// ── Admin Page ────────────────────────────────────────────────────────────────
-
 export default function AdminDashboard() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [fields, setFields] = useState<ExtractedField[]>([]);
   const [totalCost, setTotalCost] = useState(0);
   const [healthy, setHealthy] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tableSearch, setTableSearch] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -87,9 +85,10 @@ export default function AdminDashboard() {
     setPrograms(progs);
     setFields(flds);
     setHealthy(ok);
-    // Sum total_cost from all completed program records
+
     const cost = progs.reduce((sum, p) => sum + (p.total_cost ?? 0), 0);
     setTotalCost(cost);
+
     if (!ok) {
       toast.error("Backend unreachable", {
         description: `Could not reach ${API_BASE}/health`,
@@ -113,51 +112,66 @@ export default function AdminDashboard() {
   }));
 
   return (
-    <div className="min-h-screen bg-[#FAFAF9]">
+    <div className="min-h-screen font-sans" style={{ backgroundColor: "var(--kobie-midnight)" }}>
       <Toaster position="bottom-right" />
 
       {/* Nav */}
-      <header className="border-b border-border bg-white">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-50 py-4" style={{ backgroundColor: "var(--kobie-midnight)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-stone-900 tracking-tight">InfoVac</span>
-            <span className="text-xs text-muted-foreground">Admin Dashboard</span>
+            <span className="text-sm font-bold text-white tracking-tight" style={{ fontFamily: "var(--kobie-font-heading)" }}>InfoVac</span>
+            <span className="text-xs uppercase font-bold" style={{ color: "#fd7f4f", fontFamily: "var(--kobie-font-heading)" }}>Admin Dashboard</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             {/* Health dot */}
             <div className="flex items-center gap-1.5">
               <span
                 className={`w-2 h-2 rounded-full ${
                   healthy === null
-                    ? "bg-stone-300"
+                    ? "bg-white/20 animate-pulse"
                     : healthy
-                    ? "bg-[#16A34A]"
+                    ? "bg-[#10b981]"
                     : "bg-red-500"
                 }`}
               />
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.4)" }}>
                 {healthy === null ? "Checking…" : healthy ? "Backend online" : "Backend offline"}
               </span>
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
+            <button
               onClick={refresh}
               disabled={loading}
-              className="h-8 text-xs gap-1.5 border-border"
+              className="flex items-center gap-1.5 h-8 px-3 text-xs font-bold transition-all rounded-[3px] cursor-pointer"
+              style={{
+                fontFamily: "var(--kobie-font-heading)",
+                color: "rgba(255,255,255,0.5)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "transparent",
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.color = "#fd7f4f";
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(253,127,79,0.4)";
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.5)";
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
+              }}
             >
               {loading ? (
-                <Loader2 size={12} strokeWidth={1.5} className="animate-spin" />
+                <Loader2 size={11} strokeWidth={1.5} className="animate-spin" style={{ color: "#fd7f4f" }} />
               ) : (
-                <RefreshCw size={12} strokeWidth={1.5} />
+                <RefreshCw size={11} strokeWidth={1.5} />
               )}
               Refresh
-            </Button>
+            </button>
 
             <Link
               href="/"
-              className="text-xs text-muted-foreground hover:text-stone-800 transition-colors"
+              className="text-xs transition-colors flex items-center gap-1 font-semibold"
+              style={{ color: "rgba(255,255,255,0.4)" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#fd7f4f")}
+              onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.4)")}
             >
               ← Analyst Workspace
             </Link>
@@ -165,86 +179,252 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
-        {/* Metric cards row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <CostCard totalCost={totalCost} programCount={programs.length} />
-          <GateDonutChart passed={stats.passed} failed={stats.failed} />
-          <ConfidenceBarChart
-            avgCorroboration={stats.avgCorr}
-            avgAuthority={stats.avgAuth}
-            avgRecency={stats.avgRec}
-            avgConfidence={stats.avgConf}
-          />
-          <SourceTracker sources={sourceEntries} />
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+        
+        {/* Widescreen KPI Dashboard Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          
+          {/* Left Hero Card - Focal Point Overview */}
+          <div
+            className="lg:col-span-5 rounded-[10px] p-5 space-y-6 flex flex-col justify-between"
+            style={{
+              backgroundColor: "var(--kobie-ocean)",
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <div>
+              <span className="kobie-overline text-[9px] uppercase tracking-wider" style={{ color: "var(--kobie-coral)" }}>
+                Overview
+              </span>
+              <h2 className="text-base font-bold text-white tracking-tight" style={{ fontFamily: "var(--kobie-font-heading)" }}>
+                Analysis Console
+              </h2>
+            </div>
+
+            <div className="space-y-4">
+              {/* Programs Analyzed */}
+              <div className="space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-white/35 tracking-wider block" style={{ fontFamily: "var(--kobie-font-heading)" }}>
+                  Programs Analyzed
+                </span>
+                <div className="flex items-baseline gap-2.5">
+                  <span className="text-3xl font-black text-white" style={{ fontFamily: "var(--kobie-font-heading)" }}>
+                    {programs.length}
+                  </span>
+                  <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                    ↑ +12 Today
+                  </span>
+                </div>
+              </div>
+
+              {/* Extraction Cost */}
+              <div className="space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-white/35 tracking-wider block" style={{ fontFamily: "var(--kobie-font-heading)" }}>
+                  Extraction Cost
+                </span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-black text-white animate-pulse" style={{ fontFamily: "var(--kobie-font-heading)" }}>
+                    ${totalCost.toFixed(2)}
+                  </span>
+                  <span className="text-[10px] text-white/30 font-mono">
+                    avg ${(programs.length > 0 ? totalCost / programs.length : 0).toFixed(3)}/ea
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 flex items-center justify-between" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${healthy ? "bg-emerald-500" : "bg-red-500"}`} />
+                <span className="text-[9px] font-mono text-white/40">
+                  {healthy ? "Connection online" : "Connection failed"}
+                </span>
+              </div>
+              <span className="text-[9px] text-white/30">
+                Updated just now
+              </span>
+            </div>
+          </div>
+
+          {/* Right Metrics Cards Subgrid */}
+          <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <GateDonutChart passed={stats.passed} failed={stats.failed} />
+            
+            <ConfidenceBarChart
+              avgCorroboration={stats.avgCorr}
+              avgAuthority={stats.avgAuth}
+              avgRecency={stats.avgRec}
+              avgConfidence={stats.avgConf}
+            />
+
+            <SourceTracker sources={sourceEntries} />
+          </div>
         </div>
 
-        {/* Tabs */}
-        <Tabs defaultValue="fields">
-          <TabsList className="h-8 bg-stone-100 p-0.5">
-            <TabsTrigger value="fields" className="text-xs h-7 px-4 data-[state=active]:bg-white data-[state=active]:shadow-none">
-              Data Grid {fields.length > 0 && `(${fields.length})`}
-            </TabsTrigger>
-            <TabsTrigger value="programs" className="text-xs h-7 px-4 data-[state=active]:bg-white data-[state=active]:shadow-none">
-              Programs {programs.length > 0 && `(${programs.length})`}
-            </TabsTrigger>
-            <TabsTrigger value="compare" className="text-xs h-7 px-4 data-[state=active]:bg-white data-[state=active]:shadow-none">
-              Comparator
-            </TabsTrigger>
-          </TabsList>
+        {/* Separator line between KPIs and Data Grid */}
+        <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.08)" }} />
 
-          {/* 43-field data grid */}
-          <TabsContent value="fields" className="mt-4">
-            <div className="bg-white border border-border rounded-lg p-4">
-              {fields.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-10">
-                  No field data available. Requires{" "}
-                  <code className="text-xs bg-stone-100 px-1 rounded">GET /api/fields</code> endpoint.
-                </p>
-              ) : (
-                <FieldsGrid fields={fields} />
-              )}
-            </div>
-          </TabsContent>
+        {/* Unified Table/Data Toolbar and Card */}
+        <div
+          className="rounded-[10px] overflow-hidden"
+          style={{
+            backgroundColor: "var(--kobie-ocean)",
+            border: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
+          <Tabs defaultValue="fields" className="w-full">
+            {/* Cohesive Notion/Linear style Toolbar */}
+            <div
+              className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-4 py-3"
+              style={{
+                borderBottom: "1px solid rgba(255,255,255,0.08)",
+                backgroundColor: "rgba(255,255,255,0.015)",
+              }}
+            >
+              {/* Left: Tab list */}
+              <TabsList className="bg-transparent p-0 gap-1 border-none justify-start">
+                <TabsTrigger value="fields">
+                  Data Grid {fields.length > 0 && `(${fields.length})`}
+                </TabsTrigger>
+                <TabsTrigger value="programs">
+                  Programs {programs.length > 0 && `(${programs.length})`}
+                </TabsTrigger>
+                <TabsTrigger value="compare">
+                  Comparator
+                </TabsTrigger>
+              </TabsList>
 
-          {/* Programs queue */}
-          <TabsContent value="programs" className="mt-4">
-            <div className="bg-white border border-border rounded-lg divide-y divide-border">
-              {programs.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-10">
-                  No programs found. Requires{" "}
-                  <code className="text-xs bg-stone-100 px-1 rounded">GET /api/programs</code> endpoint.
-                </p>
-              ) : (
-                programs.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <p className="text-xs font-medium text-stone-800">{p.name}</p>
-                      <p className="text-[10px] text-muted-foreground font-mono">{p.id}</p>
-                    </div>
-                    <Badge
-                      variant={p.status === "complete" ? "outline" : p.status === "failed" ? "destructive" : "secondary"}
-                      className={`text-[10px] h-5 ${
-                        p.status === "complete"
-                          ? "border-emerald-300 text-emerald-700 bg-emerald-50"
-                          : ""
-                      }`}
-                    >
-                      {p.status}
-                    </Badge>
-                  </div>
-                ))
-              )}
+              {/* Right: Quick actions toolbar + Search input */}
+              <div className="flex flex-wrap items-center gap-3">
+                <Input
+                  placeholder="Search grid parameters..."
+                  value={tableSearch}
+                  onChange={(e) => setTableSearch(e.target.value)}
+                  className="h-8 text-xs max-w-[180px] bg-transparent border-white/10 text-white placeholder-white/30 focus-visible:ring-1 focus-visible:ring-[#fd7f4f]"
+                />
+                
+                <button
+                  onClick={() => {
+                    const headers = ["ID", "Program ID", "Source", "Category", "Field", "Value", "Confidence", "Passed"];
+                    const rows = fields.map(f => [
+                      f.id,
+                      f.program_id,
+                      f.source_url || "",
+                      f.category || "",
+                      f.field_key || "",
+                      f.field_value || "",
+                      f.confidence !== null ? `${Math.round(f.confidence * 100)}%` : "",
+                      f.gate_passed ? "Yes" : "No"
+                    ]);
+                    const csvContent = "data:text/csv;charset=utf-8," 
+                      + [headers.join(","), ...rows.map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(","))].join("\n");
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `infovac_data_export_${new Date().toISOString().slice(0, 10)}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    toast.success("CSV Export complete!");
+                  }}
+                  className="h-8 px-3 text-xs font-bold transition-all rounded-[3px] flex items-center gap-1.5 cursor-pointer"
+                  style={{
+                    fontFamily: "var(--kobie-font-heading)",
+                    color: "rgba(255,255,255,0.65)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.02)",
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLButtonElement).style.color = "#fd7f4f";
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(237,127,79,0.35)";
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.65)";
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
+                  }}
+                >
+                  Export CSV
+                </button>
+                
+                <button
+                  onClick={() => {
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(fields, null, 2));
+                    const downloadAnchor = document.createElement("a");
+                    downloadAnchor.setAttribute("href", dataStr);
+                    downloadAnchor.setAttribute("download", `infovac_data_export_${new Date().toISOString().slice(0, 10)}.json`);
+                    document.body.appendChild(downloadAnchor);
+                    downloadAnchor.click();
+                    document.body.removeChild(downloadAnchor);
+                    toast.success("JSON Export complete!");
+                  }}
+                  className="h-8 px-3 text-xs font-bold transition-all rounded-[3px] flex items-center gap-1.5 cursor-pointer"
+                  style={{
+                    fontFamily: "var(--kobie-font-heading)",
+                    color: "rgba(255,255,255,0.65)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.02)",
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLButtonElement).style.color = "#fd7f4f";
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(237,127,79,0.35)";
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.65)";
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
+                  }}
+                >
+                  Download JSON
+                </button>
+              </div>
             </div>
-          </TabsContent>
 
-          {/* Comparator */}
-          <TabsContent value="compare" className="mt-4">
-            <div className="bg-white border border-border rounded-lg p-4">
-              <ComparatorPicker programs={programs} />
+            {/* Contents Area */}
+            <div className="p-4">
+              <TabsContent value="fields" className="mt-0">
+                {fields.length === 0 ? (
+                  <p className="text-xs text-center py-10" style={{ color: "rgba(255,255,255,0.3)" }}>
+                    No field data available.
+                  </p>
+                ) : (
+                  <FieldsGrid fields={fields} externalFilter={tableSearch} hideFilterInput={true} />
+                )}
+              </TabsContent>
+
+              <TabsContent value="programs" className="mt-0">
+                <div className="rounded-[8px] divide-y overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.08)", divideColor: "rgba(255,255,255,0.06)" }}>
+                  {programs.length === 0 ? (
+                    <p className="text-xs text-center py-10" style={{ color: "rgba(255,255,255,0.3)" }}>
+                      No programs found.
+                    </p>
+                  ) : (
+                    programs.map((p) => {
+                      const isComplete = p.status === "complete";
+                      const isFailed   = p.status === "failed";
+                      return (
+                        <div key={p.id} className="flex items-center justify-between px-4 py-3 transition-colors" style={{ backgroundColor: "rgba(255,255,255,0.01)" }} onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)")} onMouseLeave={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.01)")}>
+                          <div>
+                            <p className="text-xs font-bold text-white" style={{ fontFamily: "var(--kobie-font-heading)" }}>{p.name}</p>
+                            <p className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.3)" }}>{p.id}</p>
+                          </div>
+                          <Badge
+                            variant={isComplete ? "outline" : isFailed ? "destructive" : "secondary"}
+                            className="shrink-0 text-[10px]"
+                          >
+                            {p.status}
+                          </Badge>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="compare" className="mt-0">
+                <ComparatorPicker programs={programs} />
+              </TabsContent>
             </div>
-          </TabsContent>
-        </Tabs>
+          </Tabs>
+        </div>
       </main>
     </div>
   );

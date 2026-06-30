@@ -12,6 +12,38 @@ from backend.embeddings import chunk_text, embed_texts
 
 logger = structlog.get_logger(__name__)
 
+_reranker = None
+
+def _get_reranker():
+    global _reranker
+    if _reranker is None:
+        from sentence_transformers import CrossEncoder
+        logger.info("Initializing global CrossEncoder (BAAI/bge-reranker-base) for the first time...")
+        _reranker = CrossEncoder("BAAI/bge-reranker-base")
+    return _reranker
+
+def _is_unk_reply(reply: str) -> bool:
+    reply_lower = reply.lower()
+    unk_indicators = [
+        "i don't know",
+        "i do not know",
+        "i cannot find",
+        "i could not find",
+        "i don't have",
+        "i do not have",
+        "not mentioned in the context",
+        "not found in the context",
+        "limited to the provided context",
+        "context does not contain",
+        "context does not provide",
+        "context does not mention",
+        "no information",
+        "i'm sorry, but",
+        "i am sorry, but",
+        "sorry, but"
+    ]
+    return any(indicator in reply_lower for indicator in unk_indicators)
+
 class ChatRequest(BaseModel):
     message: str
     source_type: Optional[str] = None  # Metadata filter (e.g. "tnc", "faq", "homepage", etc.)
@@ -161,14 +193,15 @@ async def handle_chat_message(program_id: str, body: ChatRequest, db: AsyncSessi
     final_chunks = []
     is_degraded_mode = False
     if chunks_data:
-        from sentence_transformers import CrossEncoder
         try:
-            logger.info("Initializing Cross-Encoder for reranking...")
-            reranker = CrossEncoder("BAAI/bge-reranker-base")
+            logger.info("Running Cross-Encoder reranking in thread executor...")
             
-            # Score each candidate chunk
-            pairs = [[body.message, c["text"]] for c in chunks_data]
-            scores = reranker.predict(pairs)
+            def _sync_rerank():
+                reranker = _get_reranker()
+                pairs = [[body.message, c["text"]] for c in chunks_data]
+                return reranker.predict(pairs)
+                
+            scores = await loop.run_in_executor(None, _sync_rerank)
             
             # Sort by reranker score
             scored_chunks = sorted(zip(chunks_data, scores), key=lambda x: x[1], reverse=True)
@@ -221,6 +254,20 @@ async def handle_chat_message(program_id: str, body: ChatRequest, db: AsyncSessi
         return res.choices[0].message.content
         
     reply_text = await loop.run_in_executor(None, _call_llm)
+
+    # Compile and append source URLs
+    used_sources = []
+    seen_urls = set()
+    source_pool = scored_chunks[:3] if (not is_degraded_mode and 'scored_chunks' in locals()) else chunks_data[:3]
+    for sc in source_pool:
+        url = sc[0]["source_url"] if isinstance(sc, tuple) else sc.get("source_url")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            used_sources.append(url)
+
+    if used_sources and not _is_unk_reply(reply_text):
+        sources_block = "\n\n---\n[SOURCES]\n" + "\n".join([f"- {url}" for url in used_sources])
+        reply_text += sources_block
     
     # 7. Save Assistant Reply
     bot_msg = Message(id=uuid.uuid4(), conversation_id=conv.id, role="assistant", content=reply_text)
@@ -323,6 +370,23 @@ async def handle_comparison_chat_message(comparison_id: str, body: ChatRequest, 
         return res.choices[0].message.content
         
     reply_text = await loop.run_in_executor(None, _call_llm)
+
+    # Compile and append source URLs for all compared programs
+    comp_sources = []
+    seen_comp_urls = set()
+    for pid_str in pids:
+        # Fetch top 2 source URLs for each program
+        comp_src_res = await db.execute(
+            select(Source).where(Source.program_id == uuid.UUID(pid_str)).limit(2)
+        )
+        for s in comp_src_res.scalars().all():
+            if s.url and s.url not in seen_comp_urls:
+                seen_comp_urls.add(s.url)
+                comp_sources.append(s.url)
+                
+    if comp_sources and not _is_unk_reply(reply_text):
+        sources_block = "\n\n---\n[SOURCES]\n" + "\n".join([f"- {url}" for url in comp_sources])
+        reply_text += sources_block
     
     # 8. Save Assistant Reply
     bot_msg = Message(id=uuid.uuid4(), conversation_id=conv.id, role="assistant", content=reply_text)

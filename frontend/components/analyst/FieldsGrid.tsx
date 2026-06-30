@@ -30,14 +30,16 @@ const columns = [
   col.accessor("category", {
     header: "Category",
     cell: (info) => (
-      <span className="text-xs text-muted-foreground">{info.getValue()}</span>
+      <span className="text-xs uppercase font-bold tracking-wider" style={{ color: 'rgba(255,255,255,0.45)', fontFamily: 'var(--kobie-font-heading)' }}>
+        {info.getValue()?.replace(/_/g, " ")}
+      </span>
     ),
     size: 140,
   }),
   col.accessor("field_name", {
     header: "Field",
     cell: (info) => (
-      <span className="text-xs font-medium text-stone-800">{info.getValue()}</span>
+      <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.9)' }}>{info.getValue()}</span>
     ),
     size: 180,
   }),
@@ -48,11 +50,11 @@ const columns = [
       const row = info.row.original;
       if (!val || row.is_null) {
         return (
-          <span className="text-xs italic text-muted-foreground">null</span>
+          <span className="text-xs italic" style={{ color: 'rgba(255,255,255,0.3)' }}>null</span>
         );
       }
       return (
-        <span className="text-xs text-stone-700 line-clamp-2">{val}</span>
+        <span className="text-xs line-clamp-2" style={{ color: 'rgba(255,255,255,0.7)' }}>{val}</span>
       );
     },
     size: 240,
@@ -62,16 +64,16 @@ const columns = [
     cell: (info) => {
       const val = info.getValue();
       if (val == null)
-        return <span className="text-xs text-muted-foreground">—</span>;
+        return <span className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>;
       const pct = Math.round(val * 100);
       const color =
         pct >= 70
-          ? "text-[#16A34A]"
+          ? '#10b981'
           : pct >= 40
-          ? "text-amber-600"
-          : "text-red-500";
+          ? '#fbbf24'
+          : '#ef4444';
       return (
-        <span className={`text-xs font-medium ${color}`}>{pct}%</span>
+        <span className="text-xs font-mono font-bold" style={{ color }}>{pct}%</span>
       );
     },
     size: 90,
@@ -81,15 +83,15 @@ const columns = [
     cell: (info) => {
       const passed = info.getValue();
       if (passed == null)
-        return <span className="text-xs text-muted-foreground">—</span>;
+        return <span className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>;
       return passed ? (
-        <Badge className="text-[10px] h-5 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50">
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ backgroundColor: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }}>
           Pass
-        </Badge>
+        </span>
       ) : (
-        <Badge variant="destructive" className="text-[10px] h-5">
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
           Fail
-        </Badge>
+        </span>
       );
     },
     size: 70,
@@ -108,18 +110,22 @@ const columns = [
 
 interface FieldsGridProps {
   fields: ExtractedField[];
+  externalFilter?: string;
+  hideFilterInput?: boolean;
 }
 
-export function FieldsGrid({ fields }: FieldsGridProps) {
+export function FieldsGrid({ fields, externalFilter = "", hideFilterInput = false }: FieldsGridProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [globalFilter, setGlobalFilter] = useState("");
+  const [localFilter, setLocalFilter] = useState("");
+
+  const globalFilter = hideFilterInput ? externalFilter : localFilter;
 
   const table = useReactTable({
     data: fields,
     columns,
     state: { sorting, globalFilter },
     onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
+    onGlobalFilterChange: hideFilterInput ? undefined : setLocalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -127,7 +133,7 @@ export function FieldsGrid({ fields }: FieldsGridProps) {
 
   if (fields.length === 0) {
     return (
-      <div className="flex items-center justify-center h-32 text-xs text-muted-foreground">
+      <div className="flex items-center justify-center h-32 text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
         No extracted fields available.
       </div>
     );
@@ -135,29 +141,31 @@ export function FieldsGrid({ fields }: FieldsGridProps) {
 
   return (
     <div className="space-y-3">
-      <Input
-        placeholder="Filter fields…"
-        value={globalFilter}
-        onChange={(e) => setGlobalFilter(e.target.value)}
-        className="h-8 text-xs max-w-xs"
-      />
+      {!hideFilterInput && (
+        <Input
+          placeholder="Filter fields…"
+          value={localFilter}
+          onChange={(e) => setLocalFilter(e.target.value)}
+          className="h-8 text-xs max-w-xs"
+        />
+      )}
 
-      <ScrollArea className="h-[480px] border border-border rounded-lg">
+      <ScrollArea className="h-[480px] rounded-[8px] overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
         <Table>
-          <TableHeader className="sticky top-0 bg-stone-50 z-10">
+          <TableHeader className="sticky top-0 z-10" style={{ backgroundColor: 'rgba(5,28,44,0.96)' }}>
             {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id} className="border-b border-border hover:bg-transparent">
+              <TableRow key={hg.id} className="border-b hover:bg-transparent" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
                 {hg.headers.map((header) => (
                   <TableHead
                     key={header.id}
-                    style={{ width: header.getSize() }}
-                    className="text-[11px] font-medium text-stone-500 py-2 px-3 cursor-pointer select-none"
+                    style={{ width: header.getSize(), color: 'rgba(255,255,255,0.45)' }}
+                    className="text-[10px] uppercase font-bold py-2.5 px-3 cursor-pointer select-none"
                     onClick={header.column.getToggleSortingHandler()}
                   >
                     <div className="flex items-center gap-1">
                       {flexRender(header.column.columnDef.header, header.getContext())}
                       {header.column.getCanSort() && (
-                        <ArrowUpDown size={11} strokeWidth={1.5} className="text-stone-400" />
+                        <ArrowUpDown size={10} strokeWidth={1.5} style={{ color: 'rgba(255,255,255,0.3)' }} />
                       )}
                     </div>
                   </TableHead>
@@ -166,16 +174,22 @@ export function FieldsGrid({ fields }: FieldsGridProps) {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.map((row) => (
+            {table.getRowModel().rows.map((row, idx) => (
               <TableRow
                 key={row.id}
-                className="border-b border-border last:border-0 hover:bg-stone-50/50"
+                className="last:border-0 transition-colors"
+                style={{
+                  borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  backgroundColor: idx % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.035)')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = idx % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent')}
               >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell
                     key={cell.id}
                     style={{ width: cell.column.getSize() }}
-                    className="py-2 px-3 align-top"
+                    className="py-2.5 px-3 align-top"
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
@@ -186,8 +200,8 @@ export function FieldsGrid({ fields }: FieldsGridProps) {
         </Table>
       </ScrollArea>
 
-      <p className="text-xs text-muted-foreground">
-        {table.getFilteredRowModel().rows.length} of {fields.length} fields
+      <p className="text-[10px] text-right" style={{ color: 'rgba(255,255,255,0.35)' }}>
+        Showing {table.getFilteredRowModel().rows.length} of {fields.length} parameters
       </p>
     </div>
   );

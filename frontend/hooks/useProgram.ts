@@ -69,15 +69,14 @@ export function useProgram(programId: string | null): UseProgramReturn {
         setProgram(prog);
         if (prog.status === "complete") {
           setPhase("complete");
-          // Use allSettled so a missing narrative doesn't block fields/chat
-          const [narResult, fldsResult, histResult] = await Promise.allSettled([
+          // Use allSettled so a missing narrative doesn't block fields
+          const [narResult, fldsResult] = await Promise.allSettled([
             getNarrative(programId),
             getExtractedFields(programId),
-            getChatHistory(programId),
           ]);
           if (narResult.status === "fulfilled") setNarrative(narResult.value);
           if (fldsResult.status === "fulfilled") setFields(fldsResult.value);
-          if (histResult.status === "fulfilled") setChatMessages(histResult.value.messages);
+          setChatMessages([]);
         } else if (prog.status === "failed") {
           setPhase("failed");
         } else {
@@ -100,14 +99,13 @@ export function useProgram(programId: string | null): UseProgramReturn {
       // Smart cache hit: backend returned an already-complete program
       if (prog.status === "complete") {
         setPhase("complete");
-        const [narResult, fldsResult, histResult] = await Promise.allSettled([
+        const [narResult, fldsResult] = await Promise.allSettled([
           getNarrative(prog.id),
           getExtractedFields(prog.id),
-          getChatHistory(prog.id),
         ]);
         if (narResult.status === "fulfilled") setNarrative(narResult.value);
         if (fldsResult.status === "fulfilled") setFields(fldsResult.value);
-        if (histResult.status === "fulfilled") setChatMessages(histResult.value.messages);
+        setChatMessages([]);
         return prog.id;
       }
 

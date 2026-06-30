@@ -198,6 +198,40 @@ async def _check_robots(url: str, http: httpx.AsyncClient) -> str:
         return "robots_unverified"
 
 
+async def _playwright_fetch(url: str) -> tuple[Optional[str], Optional[str]]:
+    """Local fallback: Spawn headless Chromium with stealth to bypass Cloudflare."""
+    from playwright.async_api import async_playwright
+    from playwright_stealth import use_stealth
+    from bs4 import BeautifulSoup
+    
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+            await use_stealth(page)
+            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            html = await page.content()
+            await browser.close()
+            
+            soup = BeautifulSoup(html, "html.parser")
+            for tag in soup(["script", "style", "nav", "footer", "header"]):
+                tag.decompose()
+            text = soup.get_text(separator="\n")
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            cleaned_text = "\n".join(chunk for chunk in chunks if chunk)
+            
+            if len(cleaned_text.strip()) > 100:
+                return cleaned_text, html
+            return None, None
+    except Exception as e:
+        log.warning("playwright_fallback_failed", url=url, error=str(e)[:200])
+        return None, None
+
+
 async def _async_firecrawl_fetch(
     keys: list[str], url: str, http: httpx.AsyncClient
 ) -> tuple[Optional[str], Optional[str]]:
@@ -440,38 +474,19 @@ async def discover_sources(
 
 
             if fetch_method == "tavily_snippet":
-                log.info("firecrawl_failed_trying_bs4", url=candidate.url)
+                log.info("firecrawl_failed_trying_playwright_stealth", url=candidate.url)
                 try:
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    }
-                    # Strict timeout on the httpx call — prevents blocking DNS resolution
-                    # from escaping the outer asyncio.wait_for via the executor thread
-                    resp = await asyncio.wait_for(
-                        http.get(candidate.url, headers=headers, timeout=_BS4_HTTP_TIMEOUT, follow_redirects=True),
-                        timeout=_BS4_HTTP_TIMEOUT + 1.0
-                    )
-                    if resp.status_code == 200:
-                        from bs4 import BeautifulSoup
-                        soup = BeautifulSoup(resp.content, "html.parser")
-                        for tag in soup(["script", "style", "nav", "footer", "header"]):
-                            tag.decompose()
-                        text = soup.get_text(separator="\n")
-                        lines = (line.strip() for line in text.splitlines())
-                        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-                        cleaned_text = "\n".join(chunk for chunk in chunks if chunk)
-                        if len(cleaned_text.strip()) > 100:
-                            raw_content = cleaned_text
-                            raw_html = resp.text[:80_000]
-                            fetch_method = "beautifulsoup"
-                            fetch_status = "success"
-                            log.info("bs4_scraping_fallback_success", url=candidate.url, text_len=len(cleaned_text))
-                        else:
-                            raise ValueError("Extracted text too short")
+                    cleaned_text, html = await _playwright_fetch(candidate.url)
+                    if cleaned_text:
+                        raw_content = cleaned_text
+                        raw_html = html[:80_000]
+                        fetch_method = "playwright_stealth"
+                        fetch_status = "success"
+                        log.info("playwright_scraping_success", url=candidate.url, text_len=len(cleaned_text))
                     else:
-                        raise ValueError(f"HTTP Status {resp.status_code}")
-                except (asyncio.TimeoutError, Exception) as fallback_exc:
-                    log.warning("bs4_scraping_fallback_failed", url=candidate.url, error=str(fallback_exc)[:200])
+                        raise ValueError("Stealth browser extraction returned empty content")
+                except Exception as fallback_exc:
+                    log.warning("playwright_scraping_failed_falling_back_to_tavily", url=candidate.url, error=str(fallback_exc)[:200])
                     raw_content = candidate.tavily_snippet
                     fetch_method = "tavily_snippet"
                     fetch_status = "tavily_fallback"

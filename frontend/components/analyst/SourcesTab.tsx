@@ -9,25 +9,25 @@ interface SourcesTabProps {
   programId: string;
 }
 
-const SOURCE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  tnc:          { label: "T&C",        color: "bg-purple-50 text-purple-700 border-purple-200" },
-  press:        { label: "Press",      color: "bg-blue-50 text-blue-700 border-blue-200" },
-  faq:          { label: "FAQ",        color: "bg-sky-50 text-sky-700 border-sky-200" },
-  homepage:     { label: "Homepage",   color: "bg-stone-50 text-stone-600 border-stone-200" },
-  benefits:     { label: "Benefits",   color: "bg-teal-50 text-teal-700 border-teal-200" },
-  news:         { label: "News",       color: "bg-amber-50 text-amber-700 border-amber-200" },
-  mechanics:    { label: "Mechanics",  color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-  partners:     { label: "Partners",   color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  app_review:   { label: "App Review", color: "bg-orange-50 text-orange-700 border-orange-200" },
-  competitors:  { label: "Competitor", color: "bg-red-50 text-red-700 border-red-200" },
-  forum:        { label: "Forum",      color: "bg-rose-50 text-rose-700 border-rose-200" },
+const SOURCE_TYPE_LABELS: Record<string, { label: string; bgColor: string; textColor: string; borderColor: string }> = {
+  tnc:          { label: "T&C",        bgColor: 'rgba(139,92,246,0.15)', textColor: '#a78bfa', borderColor: 'rgba(139,92,246,0.3)' },
+  press:        { label: "Press",      bgColor: 'rgba(59,130,246,0.15)', textColor: '#60a5fa', borderColor: 'rgba(59,130,246,0.3)' },
+  faq:          { label: "FAQ",        bgColor: 'rgba(14,165,233,0.15)', textColor: '#38bdf8', borderColor: 'rgba(14,165,233,0.3)' },
+  homepage:     { label: "Homepage",   bgColor: 'rgba(255,255,255,0.08)', textColor: 'rgba(255,255,255,0.5)', borderColor: 'rgba(255,255,255,0.15)' },
+  benefits:     { label: "Benefits",   bgColor: 'rgba(20,184,166,0.15)', textColor: '#2dd4bf', borderColor: 'rgba(20,184,166,0.3)' },
+  news:         { label: "News",       bgColor: 'rgba(245,158,11,0.15)', textColor: '#fbbf24', borderColor: 'rgba(245,158,11,0.3)' },
+  mechanics:    { label: "Mechanics",  bgColor: 'rgba(99,102,241,0.15)', textColor: '#818cf8', borderColor: 'rgba(99,102,241,0.3)' },
+  partners:     { label: "Partners",   bgColor: 'rgba(16,185,129,0.12)', textColor: '#34d399', borderColor: 'rgba(16,185,129,0.3)' },
+  app_review:   { label: "App Review", bgColor: 'rgba(253,127,79,0.15)', textColor: '#fd7f4f', borderColor: 'rgba(253,127,79,0.3)' },
+  competitors:  { label: "Competitor", bgColor: 'rgba(239,68,68,0.12)', textColor: '#f87171', borderColor: 'rgba(239,68,68,0.3)' },
+  forum:        { label: "Forum",      bgColor: 'rgba(244,63,94,0.12)', textColor: '#fb7185', borderColor: 'rgba(244,63,94,0.3)' },
 };
 
 function Favicon({ url }: { url: string }) {
   const [err, setErr] = useState(false);
   const domain = url ? url.split("/")[2] || "" : "";
   if (err || !domain) {
-    return <Globe size={14} className="text-stone-400 shrink-0" />;
+    return <Globe size={14} className="shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }} />;
   }
   return (
     <img
@@ -44,11 +44,22 @@ export function SourcesTab({ programId }: SourcesTabProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    getProgramSources(programId).then((data) => {
-      setSources(data);
-      setLoading(false);
-    });
+    let active = true;
+    async function load() {
+      setLoading(true);
+      try {
+        const data = await getProgramSources(programId);
+        if (active) setSources(data);
+      } catch (err) {
+        console.error("Failed to load sources:", err);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      active = false;
+    };
   }, [programId]);
 
   const succeeded = sources.filter((s) => s.fetch_status === "success");
@@ -56,8 +67,8 @@ export function SourcesTab({ programId }: SourcesTabProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12 gap-2 text-stone-400 text-sm">
-        <Loader2 size={16} className="animate-spin" />
+      <div className="flex items-center justify-center py-12 gap-2 text-sm" style={{ color: 'rgba(255,255,255,0.35)' }}>
+        <Loader2 size={16} className="animate-spin" style={{ color: '#fd7f4f' }} />
         Loading sources…
       </div>
     );
@@ -65,28 +76,30 @@ export function SourcesTab({ programId }: SourcesTabProps) {
 
   if (sources.length === 0) {
     return (
-      <p className="text-sm text-stone-400 text-center py-12">No source data available.</p>
+      <p className="text-sm text-center py-12" style={{ color: 'rgba(255,255,255,0.3)' }}>No source data available.</p>
     );
   }
 
   return (
     <div className="space-y-4">
       {/* Summary bar */}
-      <div className="flex items-center gap-4 text-xs text-stone-600 font-mono bg-stone-50 border border-stone-200 rounded-lg px-4 py-2.5">
-        <span className="text-stone-400">Total crawled:</span>
-        <span className="font-bold text-stone-800">{sources.length}</span>
-        <span className="text-stone-300">·</span>
-        <span className="text-emerald-600 font-semibold">{succeeded.length} succeeded</span>
-        <span className="text-stone-300">·</span>
-        <span className="text-red-500 font-semibold">{failed.length} failed</span>
+      <div className="flex items-center gap-4 text-xs font-mono rounded-[8px] px-4 py-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <span style={{ color: 'rgba(255,255,255,0.35)' }}>Total crawled:</span>
+        <span className="font-bold" style={{ color: 'rgba(255,255,255,0.85)' }}>{sources.length}</span>
+        <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
+        <span className="font-semibold" style={{ color: '#10b981' }}>{succeeded.length} succeeded</span>
+        <span style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
+        <span className="font-semibold" style={{ color: '#ef4444' }}>{failed.length} failed</span>
       </div>
 
       {/* Source list */}
-      <div className="divide-y divide-stone-100 border border-stone-200 rounded-lg overflow-hidden">
+      <div className="overflow-hidden rounded-[8px]" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
         {sources.map((src) => {
           const badge = SOURCE_TYPE_LABELS[src.source_type] ?? {
             label: src.source_type,
-            color: "bg-stone-50 text-stone-500 border-stone-200",
+            bgColor: 'rgba(255,255,255,0.06)',
+            textColor: 'rgba(255,255,255,0.5)',
+            borderColor: 'rgba(255,255,255,0.12)',
           };
           const domain = src.url.split("/")[2] ?? src.url;
           const date = new Date(src.fetched_at).toLocaleDateString("en-GB", {
@@ -96,12 +109,18 @@ export function SourcesTab({ programId }: SourcesTabProps) {
           });
 
           return (
-            <div key={src.id} className="flex items-center gap-3 px-4 py-2.5 bg-white hover:bg-stone-50/60 transition-colors">
+            <div
+              key={src.id}
+              className="flex items-center gap-3 px-4 py-2.5 transition-colors"
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
               {/* Status icon */}
               {src.fetch_status === "success" ? (
-                <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+                <CheckCircle2 size={14} className="shrink-0" style={{ color: '#10b981' }} />
               ) : (
-                <XCircle size={14} className="text-red-400 shrink-0" />
+                <XCircle size={14} className="shrink-0" style={{ color: '#ef4444' }} />
               )}
 
               {/* Favicon */}
@@ -113,21 +132,24 @@ export function SourcesTab({ programId }: SourcesTabProps) {
                   href={src.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs font-medium text-stone-700 hover:text-[#0F766E] hover:underline truncate block transition-colors"
+                  className="text-xs font-medium truncate block transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.75)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#fd7f4f')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.75)')}
                   title={src.url}
                 >
                   {src.title || domain}
                 </a>
-                <span className="text-[10px] text-stone-400 font-mono truncate block">{domain}</span>
+                <span className="text-[10px] font-mono truncate block" style={{ color: 'rgba(255,255,255,0.3)' }}>{domain}</span>
               </div>
 
               {/* Source type badge */}
-              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border shrink-0 ${badge.color}`}>
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px] border shrink-0" style={{ backgroundColor: (badge as any).bgColor, color: (badge as any).textColor, borderColor: (badge as any).borderColor }}>
                 {badge.label}
               </span>
 
               {/* Date */}
-              <span className="text-[10px] text-stone-400 font-mono shrink-0 w-20 text-right">{date}</span>
+              <span className="text-[10px] font-mono shrink-0 w-20 text-right" style={{ color: 'rgba(255,255,255,0.3)' }}>{date}</span>
             </div>
           );
         })}

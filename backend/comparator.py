@@ -292,4 +292,4 @@ async def compare_programs(
             error=str(exc),
             traceback=traceback.format_exc(),
         )
-        return None
+        raise exc

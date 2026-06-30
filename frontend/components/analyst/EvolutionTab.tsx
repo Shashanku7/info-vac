@@ -50,18 +50,18 @@ export function EvolutionTab({ programId }: EvolutionTabProps) {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-3 bg-white">
-        <Loader2 className="animate-spin text-[#0F766E]" size={24} />
-        <span className="text-xs text-stone-500 font-medium">Analyzing program evolution and changes...</span>
+      <div className="flex flex-col items-center justify-center py-16 space-y-3 rounded-[10px]" style={{ backgroundColor: "var(--kobie-ocean)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <Loader2 className="animate-spin" size={24} style={{ color: "#fd7f4f" }} />
+        <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Analyzing program evolution and changes...</span>
       </div>
     );
   }
 
   if (error) {
     return (
-      <Alert className="border-red-150 bg-red-50/50 my-2">
-        <AlertCircle size={14} className="text-red-500" />
-        <AlertDescription className="text-xs text-red-700">
+      <Alert variant="destructive" className="my-2 rounded-[8px]">
+        <AlertCircle size={14} />
+        <AlertDescription className="text-xs">
           {error.includes("No extraction data") 
             ? "Run at least two analyses for this program to see the historical evolution changelog."
             : error}
@@ -72,10 +72,10 @@ export function EvolutionTab({ programId }: EvolutionTabProps) {
 
   if (!evolution || (evolution.changelog && evolution.changelog.length === 0)) {
     return (
-      <div className="text-center py-12 space-y-2 bg-white">
-        <Activity size={20} className="mx-auto text-stone-400" />
-        <p className="text-xs text-stone-500 font-medium">No program changes detected yet.</p>
-        <p className="text-[10px] text-stone-400 max-w-sm mx-auto">
+      <div className="text-center py-12 space-y-2 rounded-[10px]" style={{ backgroundColor: "var(--kobie-ocean)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <Activity size={20} className="mx-auto" style={{ color: "rgba(255,255,255,0.3)" }} />
+        <p className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.7)" }}>No program changes detected yet.</p>
+        <p className="text-[10px] max-w-sm mx-auto" style={{ color: "rgba(255,255,255,0.35)" }}>
           Evolution tracking comparison requires running a fresh analysis on this program after a period of time to spot changes.
         </p>
       </div>
@@ -85,79 +85,83 @@ export function EvolutionTab({ programId }: EvolutionTabProps) {
   return (
     <div className="space-y-6">
       {/* Executive Summary */}
-      <Card className="border-border shadow-none bg-stone-50/40">
-        <CardContent className="p-5 space-y-2.5">
-          <h4 className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles size={12} className="text-[#0F766E]" />
-            Historical Evolution Summary
-          </h4>
-          <p className="text-xs text-stone-700 leading-relaxed">
-            {evolution.executive_summary}
-          </p>
-        </CardContent>
-      </Card>
+      <div className="rounded-[10px] p-5 space-y-2.5" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <h4 className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--kobie-font-heading)" }}>
+          <Sparkles size={12} style={{ color: "#fd7f4f" }} />
+          Historical Evolution Summary
+        </h4>
+        <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.7)" }}>
+          {evolution.executive_summary}
+        </p>
+      </div>
 
       {/* Changelog Timeline */}
       <div className="space-y-3">
-        <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wide px-1">
+        <h4 className="text-xs font-bold uppercase tracking-wide px-1" style={{ color: "rgba(255,255,255,0.45)", fontFamily: "var(--kobie-font-heading)" }}>
           Detailed Change Log
         </h4>
         <div className="grid grid-cols-1 gap-3">
           {evolution.changelog.map((item, i) => {
-            const changeColorMap: Record<string, string> = {
-              upgraded: "border-emerald-300 text-emerald-700 bg-emerald-50",
-              devalued: "border-red-300 text-red-700 bg-red-50",
-              altered: "border-teal-300 text-teal-700 bg-teal-50",
-              none: "border-stone-200 text-stone-500 bg-stone-50",
+            const changeColorStyleMap: Record<string, { bg: string; text: string; border: string }> = {
+              upgraded: { bg: "rgba(16,185,129,0.12)", text: "#10b981", border: "1px solid rgba(16,185,129,0.3)" },
+              devalued: { bg: "rgba(239,68,68,0.12)", text: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" },
+              altered: { bg: "rgba(253,127,79,0.12)", text: "#fd7f4f", border: "1px solid rgba(253,127,79,0.3)" },
+              none: { bg: "rgba(255,255,255,0.05)", text: "rgba(255,255,255,0.4)", border: "1px solid rgba(255,255,255,0.12)" },
             };
+            const theme = changeColorStyleMap[item.change_type] ?? changeColorStyleMap.none;
 
             return (
-              <Card key={i} className="border-border shadow-none bg-white hover:border-[#0F766E]/20 transition-all duration-300">
-                <CardContent className="p-4 space-y-3">
-                  {/* Category + Type header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-stone-50 pb-2">
-                    <div className="min-w-0">
-                      <span className="text-xs font-semibold text-stone-800">
-                        {item.field_name.replace(/_/g, " ")}
-                      </span>
-                      <span className="text-[9px] text-stone-400 block font-mono tracking-tight">
-                        Category: {item.category}
-                      </span>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded-md ${
-                        changeColorMap[item.change_type] ?? changeColorMap.none
-                      }`}
-                    >
-                      {item.change_type === "upgraded" && <TrendingUp size={9} className="mr-1" />}
-                      {item.change_type === "devalued" && <TrendingDown size={9} className="mr-1" />}
-                      {item.change_type}
-                    </Badge>
+              <div
+                key={i}
+                className="rounded-[10px] p-4 space-y-3 transition-all duration-300"
+                style={{
+                  backgroundColor: "var(--kobie-ocean)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(253,127,79,0.3)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(255,255,255,0.08)'; }}
+              >
+                {/* Category + Type header */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold" style={{ color: "rgba(255,255,255,0.85)", fontFamily: "var(--kobie-font-heading)" }}>
+                      {item.field_name.replace(/_/g, " ")}
+                    </span>
+                    <span className="text-[9px] block font-mono tracking-tight" style={{ color: "rgba(255,255,255,0.3)" }}>
+                      Category: {item.category}
+                    </span>
                   </div>
+                  <span
+                    className="text-[9px] uppercase font-mono px-2 py-0.5 rounded-[4px] font-bold inline-flex items-center shrink-0"
+                    style={{ backgroundColor: theme.bg, color: theme.text, border: theme.border }}
+                  >
+                    {item.change_type === "upgraded" && <TrendingUp size={9} className="mr-1" />}
+                    {item.change_type === "devalued" && <TrendingDown size={9} className="mr-1" />}
+                    {item.change_type}
+                  </span>
+                </div>
 
-                  {/* Old vs New values compare */}
-                  <div className="flex items-center gap-2 bg-stone-50/50 p-2 rounded-md border border-stone-100/50 text-[11px]">
-                    <div className="flex-1 min-w-0">
-                      <span className="text-[9px] text-stone-400 block uppercase font-semibold">Old Value</span>
-                      <span className="text-stone-600 truncate block font-mono">{item.old_value || "null"}</span>
-                    </div>
-                    <ArrowRight size={14} className="text-stone-400 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-[9px] text-[#0F766E] block uppercase font-semibold">New Value</span>
-                      <span className="text-[#0F766E] font-semibold truncate block font-mono">{item.new_value || "null"}</span>
-                    </div>
+                {/* Old vs New values compare */}
+                <div className="flex items-center gap-2 p-2 rounded-[6px] text-[11px]" style={{ backgroundColor: "rgba(5,28,44,0.4)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[9px] block uppercase font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>Old Value</span>
+                    <span className="truncate block font-mono" style={{ color: "rgba(255,255,255,0.5)" }}>{item.old_value || "null"}</span>
                   </div>
+                  <ArrowRight size={14} className="shrink-0" style={{ color: "#fd7f4f" }} />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[9px] block uppercase font-bold" style={{ color: "#fd7f4f" }}>New Value</span>
+                    <span className="font-bold truncate block font-mono" style={{ color: "#fd7f4f" }}>{item.new_value || "null"}</span>
+                  </div>
+                </div>
 
-                  {/* Strategic Analysis */}
-                  <div className="space-y-1">
-                    <span className="text-[9px] text-stone-400 uppercase font-semibold">Strategic Impact</span>
-                    <p className="text-xs text-stone-600 leading-relaxed">
-                      {item.analysis}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+                {/* Strategic Analysis */}
+                <div className="space-y-1">
+                  <span className="text-[9px] uppercase font-bold" style={{ color: "rgba(255,255,255,0.3)" }}>Strategic Impact</span>
+                  <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
+                    {item.analysis}
+                  </p>
+                </div>
+              </div>
             );
           })}
         </div>

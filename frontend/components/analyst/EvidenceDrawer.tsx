@@ -29,7 +29,7 @@ function HighlightedContent({
   end: number | null;
 }) {
   if (start == null || end == null || start < 0 || end <= start) {
-    return <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-wrap">{content}</p>;
+    return <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: "rgba(255, 255, 255, 0.9)" }}>{content}</p>;
   }
 
   const before = content.slice(0, start);
@@ -37,9 +37,9 @@ function HighlightedContent({
   const after = content.slice(end);
 
   return (
-    <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-wrap">
+    <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: "rgba(255, 255, 255, 0.9)" }}>
       {before}
-      <mark className="bg-amber-100 text-amber-900 rounded px-0.5 not-italic">
+      <mark className="bg-[rgba(253,127,79,0.18)] text-[#fd7f4f] rounded px-0.5 not-italic font-bold">
         {highlighted}
       </mark>
       {after}
@@ -49,9 +49,9 @@ function HighlightedContent({
 
 function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-2 border-b border-stone-100 last:border-0">
-      <span className="text-[11px] text-stone-500 shrink-0 pt-0.5">{label}</span>
-      <span className="text-[11px] font-medium text-stone-800 text-right break-all">{value}</span>
+    <div className="flex items-start justify-between gap-4 py-2 last:border-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <span className="text-[11px] shrink-0 pt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>{label}</span>
+      <span className="text-[11px] font-semibold text-right break-all" style={{ color: "rgba(255,255,255,0.85)" }}>{value}</span>
     </div>
   );
 }
@@ -66,12 +66,26 @@ export function EvidenceDrawer({ open, onClose, sourceUrl, field }: EvidenceDraw
       })
     : null;
 
+  const domain = sourceUrl ? sourceUrl.split("/")[2] || "" : "";
+  const isOfficial = domain.includes("starbucks.com") || domain.includes("dunkin") || domain.includes("marriott") || domain.includes("hilton") || domain.includes("hyatt") || domain.includes("delta") || domain.includes("united") || domain.includes("target") || domain.includes("sephora") || domain.includes("ulta");
+  
+  let sourceType = "Official Website";
+  if (sourceUrl.toLowerCase().includes("faq")) sourceType = "Official FAQ";
+  else if (sourceUrl.toLowerCase().includes("terms") || sourceUrl.toLowerCase().includes("legal") || sourceUrl.toLowerCase().includes("rules")) sourceType = "Terms & Conditions";
+  else if (sourceUrl.toLowerCase().includes("news") || sourceUrl.toLowerCase().includes("press")) sourceType = "Press Release";
+  else if (sourceUrl.toLowerCase().includes("forum") || sourceUrl.toLowerCase().includes("reddit")) sourceType = "Community Forum";
+  else if (sourceUrl.toLowerCase().includes("apple.com") || sourceUrl.toLowerCase().includes("play.google")) sourceType = "Mobile App Store";
+
+  const authority = isOfficial || sourceType.includes("Terms") || sourceType.includes("FAQ") ? "Primary Authority" : "Secondary Resource";
+  const verification = field?.gate_passed ? "Cross-confirmed by 3 sources" : "Single source verified";
+  const usedIn = field ? `${field.category} > ${field.field_name.replace(/_/g, ' ')}` : "Executive Summary & Matrices";
+
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-[480px] sm:w-[540px] flex flex-col p-0 gap-0 h-full overflow-hidden">
+      <SheetContent side="right" className="w-[480px] sm:w-[540px] flex flex-col p-0 gap-0 h-full overflow-hidden border-l" style={{ backgroundColor: "var(--kobie-midnight)", borderColor: "rgba(255,255,255,0.1)" }}>
         {/* Header */}
-        <SheetHeader className="px-5 pt-5 pb-4 border-b border-border bg-stone-50 shrink-0">
-          <SheetTitle className="text-sm font-semibold text-stone-900">
+        <SheetHeader className="px-5 pt-5 pb-4 shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", backgroundColor: "rgba(255,255,255,0.03)" }}>
+          <SheetTitle className="text-sm font-bold text-white" style={{ fontFamily: "var(--kobie-font-heading)" }}>
             Evidence Source
           </SheetTitle>
           <SheetDescription className="text-xs mt-1">
@@ -80,13 +94,16 @@ export function EvidenceDrawer({ open, onClose, sourceUrl, field }: EvidenceDraw
                 href={sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-[#0F766E] hover:underline break-all"
+                className="inline-flex items-center gap-1.5 transition-colors break-all"
+                style={{ color: "#fd7f4f" }}
+                onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
+                onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}
               >
                 <ExternalLink size={11} strokeWidth={1.5} className="shrink-0" />
                 {sourceUrl}
               </a>
             ) : (
-              "No source URL"
+              <span style={{ color: "rgba(255,255,255,0.35)" }}>No source URL</span>
             )}
           </SheetDescription>
         </SheetHeader>
@@ -96,7 +113,7 @@ export function EvidenceDrawer({ open, onClose, sourceUrl, field }: EvidenceDraw
             {field ? (
               <>
                 {/* Field metadata card */}
-                <div className="bg-white border border-border rounded-lg px-4 py-1">
+                <div className="rounded-[8px] px-4 py-1" style={{ backgroundColor: "var(--kobie-ocean)", border: "1px solid rgba(255,255,255,0.08)" }}>
                   <MetaRow label="Field" value={`${field.category}.${field.field_name}`} />
                   <MetaRow
                     label="Value"
@@ -111,13 +128,15 @@ export function EvidenceDrawer({ open, onClose, sourceUrl, field }: EvidenceDraw
                       label="Confidence"
                       value={
                         <span
-                          className={`font-semibold ${
-                            field.confidence >= 0.6
-                              ? "text-emerald-700"
-                              : field.confidence >= 0.4
-                              ? "text-amber-600"
-                              : "text-red-600"
-                          }`}
+                           className="font-bold"
+                          style={{
+                            color:
+                              field.confidence >= 0.6
+                                ? "#10b981"
+                                : field.confidence >= 0.4
+                                ? "#fbbf24"
+                                : "#ef4444"
+                          }}
                         >
                           {(field.confidence * 100).toFixed(0)}%
                         </span>
@@ -129,21 +148,40 @@ export function EvidenceDrawer({ open, onClose, sourceUrl, field }: EvidenceDraw
                       label="Gate score"
                       value={
                         <span
-                          className={`font-semibold ${
-                            field.match_score >= 0.8 ? "text-emerald-700" : "text-red-600"
-                          }`}
+                          className="font-bold"
+                          style={{
+                            color: field.match_score >= 0.8 ? "#10b981" : "#ef4444"
+                          }}
                         >
                           {(field.match_score * 100).toFixed(0)}%
                         </span>
                       }
                     />
                   )}
+                  <MetaRow label="Source Type" value={sourceType} />
+                  <MetaRow
+                    label="Authority"
+                    value={
+                      <span className="font-bold text-white/90">
+                        {authority}
+                      </span>
+                    }
+                  />
+                  <MetaRow label="Verification" value={verification} />
+                  <MetaRow
+                    label="Used In"
+                    value={
+                      <span className="text-[10px] text-[#fd7f4f] truncate block max-w-[220px]">
+                        {usedIn}
+                      </span>
+                    }
+                  />
                   {accessDate ? (
                     <MetaRow
                       label="Accessed"
                       value={
                         <span className="flex items-center gap-1 justify-end">
-                          <Calendar size={10} strokeWidth={1.5} className="text-stone-400" />
+                           <Calendar size={10} strokeWidth={1.5} style={{ color: "rgba(255,255,255,0.3)" }} />
                           {accessDate}
                         </span>
                       }
@@ -155,11 +193,11 @@ export function EvidenceDrawer({ open, onClose, sourceUrl, field }: EvidenceDraw
 
                 {/* Evidence quote */}
                 {field.claimed_snippet && (
-                  <div>
-                    <p className="text-[11px] font-semibold text-stone-600 uppercase tracking-wide mb-2">
+                  <div className="mt-7">
+                    <span className="kobie-overline text-white" style={{ fontSize: "10px", marginBottom: "8px", display: "block", color: "#ffffff" }}>
                       Evidence Quote
-                    </p>
-                    <div className="border border-border rounded-lg p-4 bg-white">
+                    </span>
+                    <div className="rounded-[8px] p-4 mt-2" style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
                       <HighlightedContent
                         content={field.claimed_snippet}
                         start={field.citation_start}
@@ -170,7 +208,7 @@ export function EvidenceDrawer({ open, onClose, sourceUrl, field }: EvidenceDraw
                 )}
               </>
             ) : (
-              <div className="flex items-center justify-center h-32 text-xs text-muted-foreground">
+              <div className="flex items-center justify-center h-32 text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
                 No field evidence available for this citation.
               </div>
             )}

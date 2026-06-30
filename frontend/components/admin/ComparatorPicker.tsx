@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { comparePrograms } from "@/lib/api";
 import type { Comparison, Program } from "@/types/api";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { X, Loader2, TrendingUp, TrendingDown } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { X, Loader2, TrendingUp, TrendingDown, Sparkles } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ComparatorPickerProps {
@@ -46,122 +43,135 @@ export function ComparatorPicker({ programs }: ComparatorPickerProps) {
     <div className="space-y-4">
       {/* Program selector */}
       <div>
-        <p className="text-xs font-medium text-stone-700 mb-2">
+        <p className="text-xs font-semibold mb-2" style={{ color: "rgba(255,255,255,0.45)" }}>
           Select programs to compare (min. 2, must be complete)
         </p>
         <div className="flex flex-wrap gap-2">
           {completedPrograms.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No completed programs yet.</p>
+            <p className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>No completed programs yet.</p>
           ) : (
-            completedPrograms.map((p) => (
-              <Badge
-                key={p.id}
-                variant={selected.includes(p.id) ? "default" : "outline"}
-                className={`cursor-pointer text-xs transition-colors ${
-                  selected.includes(p.id)
-                    ? "bg-[#0F766E] text-white hover:bg-[#0d6b63] border-transparent"
-                    : "hover:bg-stone-100"
-                }`}
-                onClick={() => toggle(p.id)}
-              >
-                {p.name}
-                {selected.includes(p.id) && (
-                  <X size={11} className="ml-1" strokeWidth={1.5} />
-                )}
-              </Badge>
-            ))
+            completedPrograms.map((p) => {
+              const isSelected = selected.includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => toggle(p.id)}
+                  className="text-xs font-semibold px-2 py-1 rounded-[4px] border transition-all cursor-pointer inline-flex items-center gap-1"
+                  style={{
+                    backgroundColor: isSelected ? "#fd7f4f" : "rgba(255,255,255,0.04)",
+                    color: isSelected ? "#fff" : "rgba(255,255,255,0.65)",
+                    borderColor: isSelected ? "transparent" : "rgba(255,255,255,0.12)",
+                  }}
+                  onMouseEnter={e => {
+                    if (!isSelected) e.currentTarget.style.borderColor = "rgba(253,127,79,0.35)";
+                  }}
+                  onMouseLeave={e => {
+                    if (!isSelected) e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                  }}
+                >
+                  {p.name}
+                  {isSelected && (
+                    <X size={11} strokeWidth={2} />
+                  )}
+                </button>
+              );
+            })
           )}
         </div>
       </div>
 
-      <Button
+      <button
         onClick={runComparison}
         disabled={selected.length < 2 || loading}
-        className="h-8 text-xs bg-[#0F766E] hover:bg-[#0d6b63] text-white"
-        size="sm"
+        className="flex items-center justify-center gap-1.5 h-8 px-4 text-xs font-bold transition-all rounded-[3px] disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+        style={{
+          fontFamily: "var(--kobie-font-heading)",
+          backgroundColor: "#fd7f4f",
+          color: "#fff",
+          border: "none",
+        }}
+        onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#f56d38")}
+        onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#fd7f4f")}
       >
         {loading ? (
-          <><Loader2 size={12} strokeWidth={1.5} className="animate-spin mr-1.5" />Comparing…</>
+          <><Loader2 size={12} strokeWidth={1.5} className="animate-spin mr-1" />Comparing…</>
         ) : (
           `Compare ${selected.length} Programs`
         )}
-      </Button>
+      </button>
 
       {error && (
-        <p className="text-xs text-red-600">{error}</p>
+        <p className="text-xs" style={{ color: "#ef4444" }}>{error}</p>
       )}
 
       {/* Result matrix */}
       {result && (
         <div className="space-y-4">
           {/* Executive summary */}
-          <Card className="border-border shadow-none">
-            <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-xs font-medium text-stone-700">
-                Executive Summary
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <p className="text-xs text-stone-600 leading-relaxed">
-                {result.analysis.executive_summary}
-              </p>
-            </CardContent>
-          </Card>
+          <div className="rounded-[10px] p-4 space-y-2.5" style={{ backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <span className="kobie-overline" style={{ fontSize: "10px", marginBottom: 0 }}>Executive Summary</span>
+            <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.7)" }}>
+              {result.analysis.executive_summary}
+            </p>
+          </div>
 
           {/* Category matrix */}
           <ScrollArea className="max-h-[420px]">
-            <div className="space-y-2">
+            <div className="space-y-2 pr-1">
               {result.analysis.matrix.map((item, i) => (
-                <Card key={i} className="border-border shadow-none">
-                  <CardContent className="px-4 py-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-stone-800">
-                        {item.category}
-                      </span>
-                      <div className="flex gap-1">
-                        {item.rankings.map((name, rank) => (
-                          <Badge
+                <div
+                  key={i}
+                  className="rounded-[10px] p-4 space-y-2"
+                  style={{ backgroundColor: "var(--kobie-ocean)", border: "1px solid rgba(255,255,255,0.08)" }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white" style={{ fontFamily: "var(--kobie-font-heading)" }}>
+                      {item.category}
+                    </span>
+                    <div className="flex gap-1">
+                      {item.rankings.map((name, rank) => {
+                        const isFirst = rank === 0;
+                        const isLast = rank === item.rankings.length - 1 && item.rankings.length > 1;
+                        return (
+                          <span
                             key={name}
-                            variant="outline"
-                            className={`text-[10px] h-5 ${
-                              rank === 0
-                                ? "border-emerald-300 text-emerald-700 bg-emerald-50"
-                                : "border-stone-200 text-stone-500"
-                            }`}
+                            className="text-[9px] font-bold px-1.5 py-0.5 rounded-[4px] inline-flex items-center border"
+                            style={{
+                              backgroundColor: isFirst ? "rgba(16,185,129,0.12)" : "rgba(255,255,255,0.04)",
+                              color: isFirst ? "#10b981" : "rgba(255,255,255,0.5)",
+                              borderColor: isFirst ? "rgba(16,185,129,0.25)" : "rgba(255,255,255,0.12)"
+                            }}
                           >
-                            {rank === 0 && (
+                            {isFirst && (
                               <TrendingUp size={9} strokeWidth={1.5} className="mr-0.5" />
                             )}
-                            {rank === item.rankings.length - 1 && item.rankings.length > 1 && (
+                            {isLast && (
                               <TrendingDown size={9} strokeWidth={1.5} className="mr-0.5" />
                             )}
                             {name}
-                          </Badge>
-                        ))}
-                      </div>
+                          </span>
+                        );
+                      })}
                     </div>
-                    <p className="text-[11px] text-stone-500 leading-relaxed">
-                      {item.rationale}
-                    </p>
-                  </CardContent>
-                </Card>
+                  </div>
+                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>
+                    {item.rationale}
+                  </p>
+                </div>
               ))}
             </div>
           </ScrollArea>
 
           {/* Strategic recommendations */}
-          <Card className="border-border shadow-none bg-stone-50">
-            <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-xs font-medium text-stone-700">
-                Strategic Recommendations
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <p className="text-xs text-stone-600 leading-relaxed">
-                {result.analysis.strategic_recommendations}
-              </p>
-            </CardContent>
-          </Card>
+          <div className="rounded-[10px] p-4 space-y-2.5" style={{ backgroundColor: "var(--kobie-ocean)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <h4 className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--kobie-font-heading)" }}>
+              <Sparkles size={12} style={{ color: "#fd7f4f" }} />
+              Strategic Recommendations
+            </h4>
+            <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.7)" }}>
+              {result.analysis.strategic_recommendations}
+            </p>
+          </div>
         </div>
       )}
     </div>

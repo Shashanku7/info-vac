@@ -25,7 +25,7 @@ export interface ParsedNarrative {
   references: ParsedReference[];
 }
 
-const CITATION_REGEX = /source:\s*(https?:\/\/[^\s,)]+)/g;
+const CITATION_REGEX = /\(\s*source:\s*(https?:\/\/[^\s,)]+)\)/g;
 
 // Authority tier order — lower tier = higher authority = listed first
 const AUTHORITY_TIER: Record<string, number> = {
@@ -49,20 +49,35 @@ const AUTHORITY_TIER: Record<string, number> = {
 function longestCommonSubstringLength(a: string, b: string): number {
   const aL = a.toLowerCase();
   const bL = b.toLowerCase();
-  // Use a short sliding window match for performance — find the longest
-  // contiguous run of aL that appears in bL.
-  let best = 0;
-  for (let start = 0; start < aL.length; start++) {
-    for (let len = aL.length - start; len >= 4; len--) {
-      if (len <= best) break; // no point checking shorter than current best
-      const sub = aL.slice(start, start + len);
-      if (bL.includes(sub)) {
-        best = len;
-        break;
+  const m = aL.length;
+  const n = bL.length;
+  if (m === 0 || n === 0) return 0;
+
+  let prev = new Array(n + 1).fill(0);
+  let curr = new Array(n + 1).fill(0);
+  let maxLen = 0;
+
+  for (let i = 1; i <= m; i++) {
+    const charA = aL[i - 1];
+    for (let j = 1; j <= n; j++) {
+      if (charA === bL[j - 1]) {
+        curr[j] = prev[j - 1] + 1;
+        if (curr[j] > maxLen) {
+          maxLen = curr[j];
+        }
+      } else {
+        curr[j] = 0;
       }
     }
+    // Swap rows
+    const temp = prev;
+    prev = curr;
+    curr = temp;
+    // Clear current row for next iteration
+    curr.fill(0);
   }
-  return best;
+
+  return maxLen;
 }
 
 /**

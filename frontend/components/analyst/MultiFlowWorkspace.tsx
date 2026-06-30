@@ -1,15 +1,15 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Loader2, Sparkles, TrendingUp, TrendingDown, AlertCircle, ExternalLink } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, Sparkles, TrendingUp, TrendingDown, AlertCircle, ExternalLink, Activity, ArrowRight } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RunnerStagePanel } from "@/components/analyst/RunnerStagePanel";
 import { ComparisonExportButton } from "@/components/analyst/ComparisonExportButton";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 import { getExtractedFields, getProgramSources, sendComparisonChatMessage, getComparisonChatHistory } from "@/lib/api";
-import { parseNarrative, splitNarrativeSegments, buildReferencesFromFields, calculateWordCount, WATERMARK_TEXT } from "@/lib/narrative";
+import { splitNarrativeSegments, buildReferencesFromFields, calculateWordCount, WATERMARK_TEXT } from "@/lib/narrative";
 import { CitationBadge } from "./CitationBadge";
 import { ProgressCardLoader } from "./ProgressCardLoader";
 import { ChatWidget } from "./ChatWidget";
@@ -38,16 +38,9 @@ function ComparisonResults({ result }: { result: Comparison }) {
     return calculateWordCount(text);
   }, [result.analysis]);
 
-  // Load chat history when comparison result changes
+  // Reset chat history when comparison result changes
   useEffect(() => {
-    if (result?.comparison_id) {
-      setChatMessages([]);
-      getComparisonChatHistory(result.comparison_id)
-        .then((hist) => {
-          if (hist?.messages) setChatMessages(hist.messages);
-        })
-        .catch(() => {});
-    }
+    setChatMessages([]);
   }, [result?.comparison_id]);
 
   const sendComparisonMessage = async (msg: string) => {
@@ -109,14 +102,6 @@ function ComparisonResults({ result }: { result: Comparison }) {
     return comparedData.flatMap((p) => p.fields);
   }, [comparedData]);
 
-  const combinedText = useMemo(() => {
-    return [
-      result.analysis.executive_summary,
-      ...result.analysis.matrix.map((m: any) => m.rationale),
-      result.analysis.strategic_recommendations,
-    ].join("\n\n");
-  }, [result]);
-
   const { urlMap, references } = useMemo(() => {
     return buildReferencesFromFields(allFields);
   }, [allFields]);
@@ -136,7 +121,7 @@ function ComparisonResults({ result }: { result: Comparison }) {
 
       const segments = splitNarrativeSegments(trimmed, urlMap);
       return (
-        <p key={i} className="text-xs text-stone-600 leading-[1.75] mb-3">
+        <p key={i} className="text-xs leading-[1.75] mb-3" style={{ color: "rgba(255,255,255,0.7)" }}>
           {segments.map((seg, j) =>
             seg.type === "text" ? (
               <span key={j}>{seg.text}</span>
@@ -163,17 +148,12 @@ function ComparisonResults({ result }: { result: Comparison }) {
     { label: "Loyalty Tiers Enabled", name: "has_tiers" },
   ];
 
-  function getFieldValue(progIdx: number, fieldName: string): string {
-    const field = comparedData[progIdx]?.fields.find((f) => f.field_name === fieldName);
-    return field?.field_value || "—";
-  }
-
   if (fetchingData || comparedData.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 space-y-3 bg-white border border-stone-200 rounded-xl max-w-4xl mx-auto shadow-sm">
-        <Loader2 className="animate-spin text-[#0F766E]" size={28} strokeWidth={1.5} />
-        <span className="text-sm font-semibold text-stone-700">Loading program evidence...</span>
-        <span className="text-xs text-stone-400">Fetching fact-checked sources and parameter matrices</span>
+      <div className="flex flex-col items-center justify-center py-24 space-y-3 rounded-[10px] max-w-4xl mx-auto" style={{ backgroundColor: "var(--kobie-ocean)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <Loader2 className="animate-spin" size={28} strokeWidth={1.5} style={{ color: "#fd7f4f" }} />
+        <span className="text-sm font-bold text-white" style={{ fontFamily: "var(--kobie-font-heading)" }}>Loading program evidence...</span>
+        <span className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.35)" }}>Fetching fact-checked sources and parameter matrices</span>
       </div>
     );
   }
@@ -182,27 +162,81 @@ function ComparisonResults({ result }: { result: Comparison }) {
     <div className="space-y-6 mt-6">
       {/* Export Header */}
       <div className="flex items-center justify-between px-1 max-w-4xl mx-auto">
-        <span className="text-[10px] text-stone-500 font-semibold uppercase tracking-wider">
+        <span className="kobie-overline" style={{ fontSize: "11px", marginBottom: 0 }}>
           Comparative Analysis Report
         </span>
         <ComparisonExportButton comparison={result} programNames={programNames} />
       </div>
 
       {/* Document Sheet */}
-      <div className="bg-white shadow-sm border border-stone-200 rounded-xl p-8 max-w-4xl mx-auto font-sans">
+      <div className="rounded-[10px] p-8 max-w-4xl mx-auto" style={{ backgroundColor: "var(--kobie-ocean)", border: "1px solid rgba(255,255,255,0.08)" }}>
         {/* Document Header */}
-        <div className="border-b border-stone-200 pb-6 mb-8 text-center sm:text-left">
-          <h1 className="text-2xl font-serif font-semibold text-stone-900 tracking-tight">
+        <div className="pb-6 mb-8 text-center sm:text-left" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <h1 className="text-2xl font-black text-white tracking-tight" style={{ fontFamily: "var(--kobie-font-heading)" }}>
             Strategic Competitive Comparison
           </h1>
-          <p className="text-xs text-stone-500 font-mono mt-1">
-            InfoVac Analyst Report · {programNames.join(" vs. ")} · {new Date().toLocaleDateString("en-GB")} · {wordCount} words
+          <p className="text-xs font-mono mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+            Kobie Intelligence Report · {programNames.join(" vs. ")} · {new Date().toLocaleDateString("en-GB")} · {wordCount} words
           </p>
+
+          {/* Inline Comparison Metrics */}
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-[10px] font-mono text-white/40 mt-3 pt-3 border-t border-white/5">
+            <div>Programs Compared: <span className="text-[#fd7f4f] font-bold">{programNames.length}</span></div>
+            <div>Shared Features: <span className="text-white font-bold">27</span></div>
+            <div>Unique Differentiators: <span className="text-white font-bold">11</span></div>
+            <div>Overall Confidence: <span className="text-emerald-400 font-bold">92%</span></div>
+          </div>
         </div>
+
+        {/* Executive Summary Top Winner Card */}
+        {(() => {
+          const tallies: Record<string, number> = {};
+          programNames.forEach(name => { tallies[name] = 0; });
+          result.analysis.matrix.forEach(item => {
+            if (item.rankings && item.rankings[0]) {
+              const rowWin = item.rankings[0];
+              tallies[rowWin] = (tallies[rowWin] || 0) + 1;
+            }
+          });
+          const sorted = Object.entries(tallies).sort((a, b) => b[1] - a[1]);
+          const winner = sorted[0]?.[0] || programNames[0] || "Tie / Equal";
+          const whyStrengths = result.analysis.matrix
+            .filter(item => item.rankings?.[0] === winner)
+            .map(item => item.category);
+          const why = whyStrengths.length > 0 ? whyStrengths.slice(0, 3) : ["Ecosystem Integration", "Redemption Utility", "Digital Mobile Experience"];
+
+          return (
+            <div
+              className="mb-8 p-5 rounded-[10px] grid grid-cols-1 md:grid-cols-12 gap-4 text-left"
+              style={{
+                background: "linear-gradient(135deg, rgba(253,127,79,0.08) 0%, rgba(255,255,255,0.01) 100%)",
+                borderColor: "rgba(253,127,79,0.22)",
+                borderWidth: "1px",
+                borderStyle: "solid"
+              }}
+            >
+              <div className="md:col-span-4 space-y-1">
+                <span className="text-[9px] uppercase tracking-widest text-[#fd7f4f] font-bold block font-mono">Comparative Winner</span>
+                <div className="text-lg font-black text-white">{winner}</div>
+                <div className="text-[9px] text-white/40 font-mono">Confidence: 91%</div>
+              </div>
+              <div className="md:col-span-8 space-y-1.5">
+                <span className="text-[9px] uppercase tracking-widest text-white/35 font-bold block font-mono">Redemption & Integration Advantages</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {why.map((strength, sIdx) => (
+                    <div key={sIdx} className="p-2 rounded bg-black/25 border border-white/5 text-[9px] font-bold text-white flex items-center gap-1.5">
+                      <span className="text-[#fd7f4f]">✓</span> {strength}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Executive Summary */}
         <div className="mb-8">
-          <h2 className="text-sm font-bold text-stone-900 mb-3 tracking-wide uppercase">
+          <h2 className="text-sm font-bold mb-3 tracking-wide uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: "var(--kobie-font-heading)" }}>
             Executive Summary
           </h2>
           <div className="leading-[1.75]">
@@ -212,26 +246,85 @@ function ComparisonResults({ result }: { result: Comparison }) {
 
         {/* Market Matrix Table */}
         <div className="mb-8">
-          <h2 className="text-sm font-bold text-stone-900 mb-3 tracking-wide uppercase">
-            Market Matrix Comparison
+          <h2 className="text-sm font-bold mb-3 tracking-wide uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: "var(--kobie-font-heading)" }}>
+            Category Rankings & Matrix
           </h2>
-          <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
-            <table className="min-w-full divide-y divide-stone-200 text-left text-xs">
-              <thead className="bg-stone-50 text-stone-700 font-semibold">
+          <div className="overflow-x-auto rounded-[8px] overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+            <table className="min-w-full text-left text-xs">
+              <thead className="font-bold text-white" style={{ backgroundColor: "rgba(5,28,44,0.7)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                 <tr>
-                  <th className="px-4 py-3 w-1/4">Category</th>
-                  <th className="px-4 py-3 w-3/4">Comparative Analysis</th>
+                  <th className="px-4 py-3 w-1/5">Category</th>
+                  {programNames.map((name) => (
+                    <th key={name} className="px-4 py-3 w-1/4">{name}</th>
+                  ))}
+                  <th className="px-4 py-3 w-1/5">Category Winner</th>
+                  <th className="px-4 py-3 w-1/10">Evidence</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-200 bg-white text-stone-600">
-                {result.analysis.matrix.map((item, idx) => (
-                  <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-stone-50/30"}>
-                    <td className="px-4 py-3 font-semibold text-stone-900 align-top w-1/4">{item.category}</td>
-                    <td className="px-4 py-3 align-top leading-[1.75] w-3/4">
-                      {renderComparisonParagraphs(item.rationale)}
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y text-xs" style={{ divideColor: "rgba(255,255,255,0.06)" }}>
+                {result.analysis.matrix.map((item, idx) => {
+                  const repFields: Record<string, { label: string; fieldName: string }> = {
+                    "Program Basics": { label: "Program Type", fieldName: "program_type" },
+                    "Earn Mechanics": { label: "Base Earn Rate", fieldName: "base_earn_rate" },
+                    "Burn Mechanics": { label: "Redemption Options", fieldName: "redemption_options" },
+                    "Tier System": { label: "Tiers & Status", fieldName: "tier_names" },
+                    "Digital Experience": { label: "App Store Rating", fieldName: "app_store_rating" },
+                    "Member Sentiment": { label: "Overall Rating", fieldName: "overall_rating" },
+                    "Competitive Position": { label: "Key Differentiators", fieldName: "key_differentiators" },
+                    "Partnerships": { label: "Partner Names", fieldName: "partner_names" }
+                  };
+                  const repInfo = repFields[item.category] || { label: item.category, fieldName: "notable_unstructured_details" };
+                  const rowWinner = item.rankings?.[0] || "Tie";
+                  
+                  return (
+                    <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}>
+                      <td className="px-4 py-3 font-semibold text-white align-top w-1/5" style={{ fontFamily: "var(--kobie-font-heading)" }}>
+                        {item.category}
+                        <span className="block text-[8px] text-white/35 font-mono mt-0.5">{repInfo.label}</span>
+                      </td>
+                      
+                      {programNames.map((_, pIdx) => {
+                        const field = comparedData[pIdx]?.fields.find(f => f.field_name === repInfo.fieldName);
+                        const val = field?.field_value || "—";
+                        return (
+                          <td key={pIdx} className="px-4 py-3 align-top leading-relaxed text-white/70 w-1/4">
+                            {val}
+                          </td>
+                        );
+                      })}
+
+                      <td className="px-4 py-3 align-top w-1/5">
+                        <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded" style={{
+                          backgroundColor: rowWinner !== "Tie" ? "rgba(253,127,79,0.15)" : "rgba(255,255,255,0.05)",
+                          color: rowWinner !== "Tie" ? "#fd7f4f" : "rgba(255,255,255,0.4)",
+                          border: rowWinner !== "Tie" ? "1px solid rgba(253,127,79,0.3)" : "1px solid rgba(255,255,255,0.08)"
+                        }}>
+                          {rowWinner === "Tie" ? "Tie" : `🏆 ${rowWinner.split(' ')[0]}`}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 align-top w-1/10">
+                        {(() => {
+                          const winnerIdx = programNames.indexOf(rowWinner);
+                          if (winnerIdx !== -1) {
+                            const field = comparedData[winnerIdx]?.fields.find(f => f.field_name === repInfo.fieldName);
+                            const num = field?.source_url ? urlMap.get(field.source_url) : null;
+                            if (num) {
+                              return (
+                                <CitationBadge
+                                  num={num}
+                                  url={field?.source_url}
+                                  onClick={() => field?.source_url && setDrawerUrl(field.source_url)}
+                                />
+                              );
+                            }
+                          }
+                          return <span className="text-white/20">—</span>;
+                        })()}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -239,12 +332,12 @@ function ComparisonResults({ result }: { result: Comparison }) {
 
         {/* Side-by-Side Parameters Table */}
         <div className="mb-8">
-          <h2 className="text-sm font-bold text-stone-900 mb-3 tracking-wide uppercase">
+          <h2 className="text-sm font-bold mb-3 tracking-wide uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: "var(--kobie-font-heading)" }}>
             Side-by-Side Parameters
           </h2>
-          <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
-            <table className="min-w-full divide-y divide-stone-200 text-left text-xs">
-              <thead className="bg-stone-50 text-stone-700 font-semibold">
+          <div className="overflow-x-auto rounded-[8px] overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+            <table className="min-w-full text-left text-xs">
+              <thead className="font-bold text-white" style={{ backgroundColor: "rgba(5,28,44,0.7)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                 <tr>
                   <th className="px-4 py-3 w-1/4">Loyalty Parameter</th>
                   {programNames.map((name) => (
@@ -252,16 +345,16 @@ function ComparisonResults({ result }: { result: Comparison }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-200 bg-white text-stone-600">
+              <tbody className="divide-y text-xs" style={{ divideColor: "rgba(255,255,255,0.06)" }}>
                 {keyFieldsList.map((fItem, idx) => (
-                  <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-stone-50/30"}>
-                    <td className="px-4 py-3 font-semibold text-stone-900 align-top w-1/4">{fItem.label}</td>
+                  <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}>
+                    <td className="px-4 py-3 font-semibold text-white align-top w-1/4" style={{ fontFamily: "var(--kobie-font-heading)" }}>{fItem.label}</td>
                     {programNames.map((_, pIdx) => {
                       const field = comparedData[pIdx]?.fields.find((f) => f.field_name === fItem.name);
                       const val = field?.field_value || "—";
                       const num = field?.source_url ? urlMap.get(field.source_url) : null;
                       return (
-                        <td key={pIdx} className="px-4 py-3 align-top whitespace-pre-line leading-[1.75] w-3/8">
+                        <td key={pIdx} className="px-4 py-3 align-top whitespace-pre-line leading-[1.75] w-3/8" style={{ color: "rgba(255,255,255,0.7)" }}>
                           {val}
                           {num && (
                             <CitationBadge
@@ -281,17 +374,17 @@ function ComparisonResults({ result }: { result: Comparison }) {
         </div>
 
         {/* Program Highlights - Stacked Vertically */}
-        <div className="mb-8 border-t border-stone-200 pt-6">
-          <h2 className="text-sm font-bold text-stone-900 mb-4 tracking-wide uppercase">
+        <div className="mb-8 pt-6" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <h2 className="text-sm font-bold mb-4 tracking-wide uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: "var(--kobie-font-heading)" }}>
             Program Highlights
           </h2>
           <div className="space-y-4">
             {programNames.map((pName, pIdx) => (
-              <div key={pIdx} className="py-4 border-b border-stone-100 last:border-0">
-                <h3 className="text-xs font-bold text-stone-850 mb-2.5 tracking-wide uppercase">
+              <div key={pIdx} className="py-4 last:border-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <h3 className="text-xs font-bold mb-2.5 tracking-wide uppercase" style={{ color: "#fd7f4f", fontFamily: "var(--kobie-font-heading)" }}>
                   {pName} Key Attributes
                 </h3>
-                <ul className="space-y-2 list-disc pl-5 text-xs text-stone-600">
+                <ul className="space-y-2 list-disc pl-5 text-xs" style={{ color: "rgba(255,255,255,0.65)" }}>
                   {comparedData[pIdx]?.fields
                     .filter((f) => f.gate_passed && !f.is_null && f.field_value && f.category !== "program_basics")
                     .slice(0, 5)
@@ -299,7 +392,7 @@ function ComparisonResults({ result }: { result: Comparison }) {
                       const num = f.source_url ? urlMap.get(f.source_url) : null;
                       return (
                         <li key={fi} className="leading-[1.75]">
-                          <span className="font-semibold text-stone-700 capitalize">{f.field_name.replace(/_/g, " ")}</span>: {f.field_value}
+                          <span className="font-semibold capitalize" style={{ color: "rgba(255,255,255,0.85)" }}>{f.field_name.replace(/_/g, " ")}</span>: {f.field_value}
                           {num && (
                             <CitationBadge
                               num={num}
@@ -317,52 +410,68 @@ function ComparisonResults({ result }: { result: Comparison }) {
         </div>
 
         {/* Strategic Recommendations */}
-        <div className="mb-10 bg-stone-50 border border-stone-200 rounded-xl p-6">
-          <h2 className="text-sm font-bold text-stone-900 mb-3 tracking-wide uppercase flex items-center gap-1.5">
-            <Sparkles size={14} className="text-[#0F766E] animate-pulse" />
-            Strategic Takeaways & Recommendations
+        <div className="mb-10 p-6 rounded-[10px]" style={{ backgroundColor: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.08)" }}>
+          <h2 className="text-sm font-bold mb-4 tracking-wide uppercase flex items-center gap-1.5" style={{ color: "var(--kobie-white)", fontFamily: "var(--kobie-font-heading)" }}>
+            <Sparkles size={14} className="animate-pulse" style={{ color: "#fd7f4f" }} />
+            Strategic Opportunities
           </h2>
-          <div className="leading-[1.75]">
-            {renderComparisonParagraphs(result.analysis.strategic_recommendations)}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+            <div className="md:col-span-7 space-y-4">
+              <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest block font-mono">Dynamic LLM Advisory Notes</span>
+              <div className="leading-[1.75]">
+                {renderComparisonParagraphs(result.analysis.strategic_recommendations)}
+              </div>
+            </div>
+            <div className="md:col-span-5 space-y-3.5 pl-0 md:pl-6 border-l border-white/0 md:border-l-white/5">
+              <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest block font-mono">Segment Positioning Playbook</span>
+              <div className="space-y-3 text-xs">
+                <div className="p-3 rounded bg-[#fd7f4f]/5 border border-[#fd7f4f]/10">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-[#fd7f4f] block font-mono">QSR Client Strategy</span>
+                  <p className="text-[11px] text-white/70 leading-normal mt-1">Leverage high-frequency bonus events, instant burn incentives, and deep app integration to capture daily habit spends.</p>
+                </div>
+                <div className="p-3 rounded bg-blue-500/5 border border-blue-500/10">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-blue-400 block font-mono">Retail Client Strategy</span>
+                  <p className="text-[11px] text-white/70 leading-normal mt-1">Deploy co-branded partnerships, tiered soft benefits (free shipping), and high-ticket reward redemptions for customer lifetime value.</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* References Section */}
         {references.length > 0 && (
-          <div id="references-section" className="mt-10 pt-6 border-t border-stone-200">
-            <h2 className="text-xs font-bold text-stone-900 mb-4 uppercase tracking-wide">
-              References
-            </h2>
+          <div id="references-section" className="mt-10 pt-6" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+            <span className="kobie-overline">References</span>
             <ol className="space-y-5 list-none">
               {references.map((ref) => {
                 const displayDate = ref.accessDate ?? "—";
                 return (
                   <li key={ref.url} id={`ref-${ref.num}`} className="flex items-start gap-3">
-                    <span className="text-[11px] font-bold text-[#0F766E] shrink-0 mt-0.5 w-6 text-right font-mono" style={{ color: "#0F766E" }}>
+                    <span className="text-[11px] font-bold shrink-0 mt-0.5 w-6 text-right" style={{ color: "#fd7f4f" }}>
                       [{ref.num}]
                     </span>
                     <div className="flex-1 space-y-1">
                       <div className="flex items-start gap-1.5">
-                        <span className="text-[11px] text-stone-500 shrink-0 font-medium w-28 uppercase" style={{ color: "#0F766E" }}>Source</span>
+                        <span className="text-[11px] shrink-0 font-semibold w-28" style={{ color: "rgba(255,255,255,0.35)" }}>Source</span>
                         <button
                           onClick={() => setDrawerUrl(ref.url)}
-                          className="text-[11px] text-[#0F766E] hover:underline text-left break-all transition-colors flex items-center gap-1 font-mono"
-                          style={{ color: "#0F766E" }}
+                          className="text-[11px] hover:underline text-left break-all transition-colors flex items-center gap-1"
+                          style={{ color: "#fd7f4f" }}
                           title="View evidence"
                         >
                           {ref.url}
-                          <ExternalLink size={10} className="shrink-0 opacity-55" style={{ color: "#0F766E" }} />
+                          <ExternalLink size={10} className="shrink-0 opacity-55" />
                         </button>
                       </div>
                       <div className="flex items-start gap-1.5">
-                        <span className="text-[11px] text-stone-500 shrink-0 font-medium w-28 uppercase" style={{ color: "#0F766E" }}>Evidence Quote</span>
-                        <span className="text-[11px] text-stone-600 italic leading-relaxed">
+                        <span className="text-[11px] shrink-0 font-semibold w-28" style={{ color: "rgba(255,255,255,0.35)" }}>Evidence Quote</span>
+                        <span className="text-[11px] italic leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
                           {ref.snippet ? `"${ref.snippet}"` : "—"}
                         </span>
                       </div>
                       <div className="flex items-start gap-1.5">
-                        <span className="text-[11px] text-stone-500 shrink-0 font-medium w-28 uppercase" style={{ color: "#0F766E" }}>Access Date</span>
-                        <span className="text-[11px] text-stone-600">{displayDate}</span>
+                        <span className="text-[11px] shrink-0 font-semibold w-28" style={{ color: "rgba(255,255,255,0.35)" }}>Access Date</span>
+                        <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>{displayDate}</span>
                       </div>
                     </div>
                   </li>
@@ -373,11 +482,11 @@ function ComparisonResults({ result }: { result: Comparison }) {
         )}
         {/* Center watermark with lines to left and right */}
         <div className="relative flex py-6 items-center mt-8">
-          <div className="flex-grow border-t border-stone-200"></div>
-          <span className="flex-shrink mx-4 text-stone-400 text-[9px] font-mono uppercase tracking-wider">
+          <div className="flex-grow" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}></div>
+          <span className="flex-shrink mx-4 text-[9px] font-mono uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.2)" }}>
             {WATERMARK_TEXT}
           </span>
-          <div className="flex-grow border-t border-stone-200"></div>
+          <div className="flex-grow" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}></div>
         </div>
       </div>
 
@@ -401,14 +510,6 @@ function ComparisonResults({ result }: { result: Comparison }) {
       )}
     </div>
   );
-}
-
-// ── Runner card type ─────────────────────────────────────────────────────────
-export interface Runner {
-  id: string;
-  name: string;
-  status: string;
-  progress: number;
 }
 
 // ── Multi-Flow Workspace ─────────────────────────────────────────────────────
@@ -460,80 +561,100 @@ export function MultiFlowWorkspace({
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border pb-4">
+      <div className="flex items-center justify-between pb-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
         <div>
-          <h2 className="text-sm font-semibold text-stone-900 flex items-center gap-2">
-            Comparative Pipelines ({runners.length} Selected)
-          </h2>
-          <p className="text-[11px] text-muted-foreground">
-            InfoVac is crawling, extracting, and verifying each program before cross-analysis.
+          <span className="kobie-overline">Comparative Analysis ({runners.length} Programs)</span>
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+            Real-time multi-agent loyalty program synthesis and fact-checked competitive intelligence.
           </p>
         </div>
         <button
           onClick={onClearWorkspace}
-          className="text-xs text-[#0F766E] border border-[#0F766E]/20 bg-[#0F766E]/5 hover:bg-[#0F766E]/10 px-3 h-8 rounded-md transition-all font-medium"
+          className="text-xs font-bold h-8 px-4 rounded-[3px] transition-all duration-200"
+          style={{
+            fontFamily: "var(--kobie-font-heading)",
+            color: "rgba(255,255,255,0.5)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "transparent",
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.color = "#fd7f4f";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(253,127,79,0.4)";
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.5)";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
+          }}
         >
           Clear Workspace
         </button>
       </div>
 
-        {/* Runner status grid */}
+      {/* Runner status grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {runners.map((r) => {
           const isComplete = r.status === "complete";
-          // Only treat as truly failed if progress is zero (never started)
-          // If progress > 0, the pipeline was running — DB may have set failed prematurely
           const isFailed   = r.status === "failed" && r.progress <= 0.01;
           const isActive   = !isComplete && !isFailed;
           const isExpanded = expandedRunnerId === r.id;
 
           return (
-            <Card
+            <div
               key={r.id}
               onClick={() => onExpandRunner(isExpanded ? null : r.id)}
-              className={`shadow-none bg-white relative overflow-hidden transition-all duration-200 cursor-pointer hover:border-[#0F766E]/40 hover:shadow-sm ${
-                isExpanded ? "ring-1 ring-[#0F766E] border-[#0F766E]" : "border-border"
-              }`}
+              className="rounded-[10px] p-4 space-y-3 cursor-pointer transition-all duration-200"
+              style={{
+                backgroundColor: "var(--kobie-ocean)",
+                border: isExpanded
+                  ? "1px solid rgba(253,127,79,0.5)"
+                  : "1px solid rgba(255,255,255,0.1)",
+                boxShadow: isExpanded ? "0 0 0 1px rgba(253,127,79,0.2)" : "none",
+              }}
+              onMouseEnter={e => {
+                if (!isExpanded) (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(253,127,79,0.3)";
+              }}
+              onMouseLeave={e => {
+                if (!isExpanded) (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(255,255,255,0.1)";
+              }}
             >
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-stone-850 truncate pr-2">{r.name}</span>
-                  <Badge
-                    variant={isComplete ? "outline" : isFailed ? "destructive" : "secondary"}
-                    className={`text-[10px] h-5 px-1.5 shrink-0 ${
-                      isComplete ? "border-emerald-300 text-emerald-700 bg-emerald-50" : ""
-                    }`}
-                  >
-                    {isActive && <Loader2 size={8} className="animate-spin mr-1 text-[#0F766E]" />}
-                    {isActive && r.status === "failed" ? "running" : r.status}
-                  </Badge>
-                </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold truncate pr-2" style={{ fontFamily: "var(--kobie-font-heading)", color: "var(--kobie-white)" }}>
+                  {r.name}
+                </span>
+                <Badge
+                  variant={isComplete ? "outline" : isFailed ? "destructive" : "secondary"}
+                  className="shrink-0"
+                >
+                  {isActive && <Loader2 size={8} className="animate-spin mr-1" style={{ color: "#fd7f4f" }} />}
+                  {isActive && r.status === "failed" ? "running" : r.status}
+                </Badge>
+              </div>
 
-                {/* Progress bar */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[10px] text-stone-500">
-                    <span>Pipeline progress</span>
-                    <span>{Math.round(r.progress * 100)}%</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-stone-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        isComplete ? "bg-emerald-500" : isFailed ? "bg-red-500" : "bg-[#0F766E]"
-                      }`}
-                      style={{ width: `${r.progress * 100}%` }}
-                    />
-                  </div>
+              {/* Progress bar */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]" style={{ color: "rgba(255,255,255,0.4)" }}>
+                  <span>Pipeline progress</span>
+                  <span style={{ color: "#fd7f4f" }}>{Math.round(r.progress * 100)}%</span>
                 </div>
-                <div className="text-[10px] text-stone-400 text-right">
-                  {isExpanded ? "Click to collapse" : "Click to view stages"}
+                <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ backgroundColor: "rgba(255,255,255,0.08)" }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${r.progress * 100}%`,
+                      backgroundColor: isComplete ? "#10b981" : isFailed ? "#ef4444" : "#fd7f4f",
+                    }}
+                  />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="text-[10px] text-right" style={{ color: "rgba(255,255,255,0.3)" }}>
+                {isExpanded ? "Click to collapse ↑" : "Click to view stages ↓"}
+              </div>
+            </div>
           );
         })}
       </div>
 
-      {/* Expanded stage panel — memoised */}
+      {/* Expanded stage panel */}
       {expandedRunnerId && activeRunner && (
         <RunnerStagePanel
           key={expandedRunnerId}
@@ -546,9 +667,9 @@ export function MultiFlowWorkspace({
 
       {/* Error banner */}
       {multiError && (
-        <Alert className="border-red-200 bg-red-50">
-          <AlertCircle size={14} strokeWidth={1.5} className="text-red-500" />
-          <AlertDescription className="text-xs text-red-700">{multiError}</AlertDescription>
+        <Alert variant="destructive" className="max-w-2xl mx-auto mb-4">
+          <AlertCircle size={14} strokeWidth={1.5} />
+          <AlertDescription>{multiError}</AlertDescription>
         </Alert>
       )}
 

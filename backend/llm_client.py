@@ -131,31 +131,63 @@ class FallbackCompletions:
         
         last_exc = None
         for backend in backends:
-            try:
-                client = backend["client"]()
-                model_name = backend["model"]
-                
-                current_kwargs = dict(kwargs)
-                current_kwargs["model"] = model_name
-                
-                if "response_model" in current_kwargs:
-                    if hasattr(client, "chat") and hasattr(client.chat, "completions"):
-                        return client.chat.completions.create(**current_kwargs)
-                    elif hasattr(client, "completions"):
-                        return client.completions.create(**current_kwargs)
+            provider = backend["provider"]
+            # Determine maximum attempts based on how many keys are in the broker
+            max_attempts = 1
+            if provider == "gemini-broker":
+                max_attempts = len(gemini_keys)
+            elif provider == "groq-broker":
+                max_attempts = len(groq_keys)
+
+            for attempt in range(max_attempts):
+                try:
+                    client = backend["client"]()
+                    model_name = backend["model"]
+                    
+                    current_kwargs = dict(kwargs)
+                    current_kwargs["model"] = model_name
+                    
+                    if "response_model" in current_kwargs:
+                        if hasattr(client, "chat") and hasattr(client.chat, "completions"):
+                            return client.chat.completions.create(**current_kwargs)
+                        elif hasattr(client, "completions"):
+                            return client.completions.create(**current_kwargs)
+                        else:
+                            return client.client.chat.completions.create(**current_kwargs)
                     else:
-                        return client.client.chat.completions.create(**current_kwargs)
-                else:
-                    raw_client = getattr(client, "client", client)
-                    if hasattr(raw_client, "chat") and hasattr(raw_client.chat, "completions"):
-                        return raw_client.chat.completions.create(**current_kwargs)
-                    elif hasattr(raw_client, "completions"):
-                        return raw_client.completions.create(**current_kwargs)
-                    else:
-                        return raw_client.chat.completions.create(**current_kwargs)
-            except Exception as exc:
-                log.warning("llm_routing_failover", provider=backend["provider"], model=backend["model"], error=str(exc))
-                last_exc = exc
+                        raw_client = getattr(client, "client", client)
+                        if hasattr(raw_client, "chat") and hasattr(raw_client.chat, "completions"):
+                            return raw_client.chat.completions.create(**current_kwargs)
+                        elif hasattr(raw_client, "completions"):
+                            return raw_client.completions.create(**current_kwargs)
+                        else:
+                            return raw_client.chat.completions.create(**current_kwargs)
+                except Exception as exc:
+                    log.warning(
+                        "llm_routing_failover", 
+                        provider=provider, 
+                        model=backend["model"], 
+                        attempt=attempt + 1,
+                        max_attempts=max_attempts,
+                        error=str(exc)
+                    )
+                    last_exc = exc
+                    
+                    # Identify if failure was due to rate-limiting / quota
+                    is_quota = False
+                    exc_str = str(exc).lower()
+                    if "429" in exc_str or "quota" in exc_str or "rate limit" in exc_str or "limit exceeded" in exc_str:
+                        is_quota = True
+
+                    # Report failure to appropriate key broker
+                    if provider == "gemini-broker":
+                        gemini_broker.report_last_key_failure(is_quota_exhausted=is_quota)
+                    elif provider == "groq-broker":
+                        groq_broker.report_last_key_failure(is_quota_exhausted=is_quota)
+                    
+                    # If it's not a rate-limit/quota issue, try next provider directly
+                    if not is_quota:
+                        break
         if last_exc:
             raise last_exc
         raise ValueError("All LLM backends in the failover chain failed.")

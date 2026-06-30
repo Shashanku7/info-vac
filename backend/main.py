@@ -430,9 +430,15 @@ async def create_comparison(body: CompareRequest, db: AsyncSession = Depends(get
             )
         p_ids_str.append(str(pid))
 
-    comparison = await compare_programs(p_ids_str, db)
-    if comparison is None:
-        raise HTTPException(status_code=500, detail="Comparison generation failed — see server logs.")
+    try:
+        comparison = await compare_programs(p_ids_str, db)
+    except Exception as exc:
+        err_msg = str(exc)
+        if "429" in err_msg or "quota" in err_msg or "rate limit" in err_msg or "limit exceeded" in err_msg:
+            detail_msg = "Rate limit reached or LLM quota exhausted on all configured keys in your .env. Please add a new key."
+        else:
+            detail_msg = f"Comparison generation failed: {err_msg}"
+        raise HTTPException(status_code=500, detail=detail_msg)
 
     await db.commit()
     return {
