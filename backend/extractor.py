@@ -264,7 +264,7 @@ def _extract_category(
 
         @retry(
             stop=stop_after_attempt(2),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
+            wait=wait_exponential(multiplier=2, min=5, max=30),
             reraise=True,
         )
         def _attempt():
@@ -360,10 +360,14 @@ def extract_fields(
     category_results: dict[str, BaseModel] = {}
     total_cost_usd = 0.0
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        future_to_cat = {
-            executor.submit(
-                _extract_category,
+    completed_count = 0
+    completed_fields_count = 0
+    total_fields_count = 45
+
+    for idx, (cat_name, cat_model, cat_key) in enumerate(_CATEGORY_MAP):
+        has_error = False
+        try:
+            res_tuple = _extract_category(
                 backends,
                 cat_model,
                 program_name,
@@ -371,72 +375,60 @@ def extract_fields(
                 cat_name,
                 program_id,
                 main_loop,
-                0.6 * idx  # stagger API start times to stay below rate limit RPS caps
-            ): (cat_name, cat_model, cat_key)
-            for idx, (cat_name, cat_model, cat_key) in enumerate(_CATEGORY_MAP)
-        }
+                0.0  # sequential, so no stagger delay needed
+            )
+            if isinstance(res_tuple, tuple):
+                result, cost = res_tuple
+            else:
+                result, cost = res_tuple, 0.0
+        except Exception as exc:
+            log.error("category_extraction_failed", category=cat_name, error=str(exc))
+            result, cost = None, 0.0
+            has_error = True
 
-        completed_count = 0
-        completed_fields_count = 0
-        total_fields_count = 45
-        for future in concurrent.futures.as_completed(future_to_cat):
-            cat_name, cat_model, cat_key = future_to_cat[future]
-            completed_count += 1
-            has_error = False
-            try:
-                res_tuple = future.result()
-                if isinstance(res_tuple, tuple):
-                    result, cost = res_tuple
-                else:
-                    result, cost = res_tuple, 0.0
-            except Exception as exc:
-                log.error("future_raised_exception", category=cat_name, error=str(exc))
-                result, cost = None, 0.0
-                has_error = True
+        total_cost_usd += cost
 
-            total_cost_usd += cost
+        if result is None:
+            # Fallback: all-null instance so the schema is always complete
+            result = cat_model(
+                **{
+                    field_name: ExtractedValue(value=None, evidence_quote=None)
+                    if getattr(cat_model.model_fields[field_name].annotation, '__name__', '') != 'EvidenceStateValue'
+                    else EvidenceStateValue(value=None, evidence_quote=None)
+                    for field_name in cat_model.model_fields
+                }
+            )
+        category_results[cat_key] = result
 
-            if result is None:
-                # Fallback: all-null instance so the schema is always complete
-                result = cat_model(
-                    **{
-                        field_name: ExtractedValue(value=None, evidence_quote=None)
-                        if getattr(cat_model.model_fields[field_name].annotation, '__name__', '') != 'EvidenceStateValue'
-                        else EvidenceStateValue(value=None, evidence_quote=None)
-                        for field_name in cat_model.model_fields
-                    }
+        fields_in_category = list(result.model_fields.keys())
+        category_status = "failed" if has_error else "completed"
+
+        for field_name in fields_in_category:
+            completed_fields_count += 1
+            if program_id and main_loop:
+                from orchestrator.events import emit_event
+                import json
+                import asyncio
+                
+                item = {
+                    "field_name": field_name,
+                    "category": cat_name,
+                    "status": category_status
+                }
+                progress_val = 0.30 + 0.23 * (completed_fields_count / total_fields_count)
+                asyncio.run_coroutine_threadsafe(
+                    emit_event(
+                        program_id,
+                        "extracting_fields",
+                        progress_val,
+                        json.dumps({
+                            "item": item,
+                            "count": completed_fields_count,
+                            "total": total_fields_count
+                        })
+                    ),
+                    main_loop
                 )
-            category_results[cat_key] = result
-
-            fields_in_category = list(result.model_fields.keys())
-            category_status = "failed" if has_error else "completed"
-
-            for field_name in fields_in_category:
-                completed_fields_count += 1
-                if program_id and main_loop:
-                    from orchestrator.events import emit_event
-                    import json
-                    import asyncio
-                    
-                    item = {
-                        "field_name": field_name,
-                        "category": cat_name,
-                        "status": category_status
-                    }
-                    progress_val = 0.30 + 0.23 * (completed_fields_count / total_fields_count)
-                    asyncio.run_coroutine_threadsafe(
-                        emit_event(
-                            program_id,
-                            "extracting_fields",
-                            progress_val,
-                            json.dumps({
-                                "item": item,
-                                "count": completed_fields_count,
-                                "total": total_fields_count
-                            })
-                        ),
-                        main_loop
-                    )
 
     schema = ExtractedSchema(
         program_basics=category_results["program_basics"],

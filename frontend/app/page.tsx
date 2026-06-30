@@ -83,7 +83,7 @@ export default function AnalystWorkspace() {
   );
 
   const { events, isDegraded } = useSSE(
-    (phase === "running" || phase === "complete") ? programId : null,
+    programId,
     { onComplete: handleComplete, onFailed: handleFailed }
   );
 

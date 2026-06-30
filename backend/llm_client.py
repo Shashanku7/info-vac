@@ -72,7 +72,7 @@ def _get_available_backends() -> list[dict[str, Any]]:
             )
         })
 
-    # 3. Groq broker
+    # 3. Groq broker (fallback)
     if groq_key:
         from openai import OpenAI
         backends.append({

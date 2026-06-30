@@ -86,6 +86,17 @@ export function SingleProgramView({
       if (parsed.item?.field_name) {
         return `Extracted ${parsed.item.field_name.replace(/_/g, " ")} (${parsed.count}/${parsed.total})`;
       }
+      if (parsed.item?.title || parsed.item?.url) {
+        const titleOrUrl = parsed.item.title || parsed.item.url;
+        const stage = events[events.length - 1]?.stage;
+        if (stage === "discovering_sources") {
+          return `Discovered: ${titleOrUrl}`;
+        }
+        if (stage === "crawling_sources") {
+          return `Crawling: ${titleOrUrl}`;
+        }
+        return titleOrUrl;
+      }
       return raw;
     } catch {
       return raw;
@@ -115,18 +126,28 @@ export function SingleProgramView({
         />
       )}
 
-      {/* Pipeline tracker (complete status logs) */}
-      {isComplete && (
-        <div className="border border-border rounded-lg bg-white overflow-hidden">
+      {/* Pipeline tracker (status logs) */}
+      {(isRunning || isComplete || isFailed) && (
+        <div className="border border-border rounded-lg bg-white overflow-hidden mb-6">
           {/* Tracker header — always visible */}
           <button
             onClick={() => setTrackerExpanded((v) => !v)}
             className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-stone-50 transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-2">
-              <CheckCircle2 size={14} strokeWidth={1.5} className="text-[#0F766E]" />
+              {isComplete ? (
+                <CheckCircle2 size={14} strokeWidth={1.5} className="text-[#0F766E]" />
+              ) : isFailed ? (
+                <AlertCircle size={14} strokeWidth={1.5} className="text-red-500" />
+              ) : (
+                <Loader2 size={14} className="animate-spin text-[#0F766E]" />
+              )}
               <span className="text-xs font-medium text-stone-700">
-                Pipeline complete · {events.length} stage{events.length !== 1 ? "s" : ""}
+                {isComplete
+                  ? `Pipeline complete · ${events.length} stage${events.length !== 1 ? "s" : ""}`
+                  : isFailed
+                  ? `Pipeline failed · ${events.length} stage${events.length !== 1 ? "s" : ""}`
+                  : `Pipeline running · ${events.length} stage${events.length !== 1 ? "s" : ""}`}
               </span>
             </div>
             <div className="flex items-center gap-2">
