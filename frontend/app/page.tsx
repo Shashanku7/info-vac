@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ProgramInput } from "@/components/analyst/ProgramInput";
 import { SimilarProgramsModal } from "@/components/analyst/CacheConflictModal";
@@ -21,12 +21,15 @@ export default function AnalystWorkspace() {
 
   // Multi-program comparison states
   const [isMultiFlow, setIsMultiFlow] = useState(false);
-  const [multiRunners, setMultiRunners] = useState<{ id: string; name: string; status: string; progress: number }[]>([]);
+  const [multiRunners, setMultiRunners] = useState<{ id: string; name: string; status: string; progress: number; hasStarted?: boolean }[]>([]);
   const [comparisonResult, setComparisonResult] = useState<Comparison | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [multiError, setMultiError] = useState<string | null>(null);
   const [expandedRunnerId, setExpandedRunnerId] = useState<string | null>(null);
   const closeExpandedPanel = useCallback(() => setExpandedRunnerId(null), []);
+
+  // Set to track jobs that have already sent a start request (prevents double-runs due to React async state queues)
+  const startedJobsRef = useRef<Set<string>>(new Set());
 
   // Load program ID on mount (client-only)
   useEffect(() => {
@@ -87,21 +90,43 @@ export default function AnalystWorkspace() {
     { onComplete: handleComplete, onFailed: handleFailed }
   );
 
-  // Polling hook for multi-program pipeline status
+  // Polling hook for multi-program pipeline status (Sequential Execution)
   useEffect(() => {
     if (!isMultiFlow || multiRunners.length === 0) return;
 
-    const active = multiRunners.some(r => r.status !== "complete" && r.status !== "failed");
-    if (!active) {
-      // All runs finished! Trigger the LLM comparison if 2+ are complete
-      const completed = multiRunners.filter(r => r.status === "complete");
+    // Check if there is an active running job
+    const anyRunning = multiRunners.some(
+      (r) => r.hasStarted && r.status !== "complete" && r.status !== "failed"
+    );
+
+    if (!anyRunning) {
+      // Find the first job that has not started yet and is not currently in-flight
+      const nextToStart = multiRunners.find((r) => !r.hasStarted && !startedJobsRef.current.has(r.id));
+      if (nextToStart) {
+        startedJobsRef.current.add(nextToStart.id);
+        // Start the next program in the queue
+        runProgram(nextToStart.id).catch((err) => {
+          console.error("Failed to run program:", err);
+        });
+        // Update its state to hasStarted = true
+        setMultiRunners((prev) =>
+          prev.map((r) =>
+            r.id === nextToStart.id ? { ...r, hasStarted: true } : r
+          )
+        );
+        return;
+      }
+
+      // If no running jobs AND none left to start: All runs finished!
+      // Trigger the LLM comparison if 2+ are complete
+      const completed = multiRunners.filter((r) => r.status === "complete");
       if (completed.length >= 2 && !comparisonResult && !isComparing && !multiError) {
         setIsComparing(true);
-        comparePrograms(completed.map(r => r.id))
-          .then(res => {
+        comparePrograms(completed.map((r) => r.id))
+          .then((res) => {
             setComparisonResult(res);
           })
-          .catch(err => {
+          .catch((err) => {
             setMultiError(err instanceof Error ? err.message : "Comparison analysis generation failed.");
           })
           .finally(() => {
@@ -115,7 +140,8 @@ export default function AnalystWorkspace() {
       try {
         const updated = await Promise.all(
           multiRunners.map(async (r) => {
-            if (r.status === "complete" || r.status === "failed") return r;
+            // Only poll for status if the runner has actually started and is not completed/failed
+            if (!r.hasStarted || r.status === "complete" || r.status === "failed") return r;
             try {
               const prog = await getProgram(r.id);
               const progressMap: Record<string, number> = {
@@ -152,6 +178,7 @@ export default function AnalystWorkspace() {
 
   async function handleSubmit(input: string | string[]) {
     setMultiError(null);
+    startedJobsRef.current.clear();
 
     // ── Comparative mode: array of names from the new multi-input UI ──
     if (Array.isArray(input)) {
@@ -170,8 +197,7 @@ export default function AnalystWorkspace() {
         try {
           // Always create a brand-new row and run fresh (no cache)
           const prog = await createProgram(programName, true);
-          await runProgram(prog.id);
-          runners.push({ id: prog.id, name: prog.name, status: "pending", progress: 0.05 });
+          runners.push({ id: prog.id, name: prog.name, status: "pending", progress: 0.05, hasStarted: false });
         } catch (err) {
           setMultiError(`Failed to queue "${programName}": ${err instanceof Error ? err.message : String(err)}`);
           setIsMultiFlow(false);
@@ -243,6 +269,7 @@ export default function AnalystWorkspace() {
     setMultiError(null);
     setExpandedRunnerId(null);
     localStorage.removeItem("infovac_program_id");
+    startedJobsRef.current.clear();
   }, [reset]);
 
   const isRunning = phase === "running";

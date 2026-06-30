@@ -124,6 +124,7 @@ def _build_source_message(
     program_name: str,
     sources: list,
     use_html_tables: bool = False,
+    max_budget: int = 200_000,
 ) -> str:
     """Build the user message with sources as data blocks, NOT instructions.
 
@@ -154,7 +155,7 @@ def _build_source_message(
     weights = [_SOURCE_WEIGHTS.get(getattr(s, 'source_type', ''), _DEFAULT_WEIGHT)
                for s in sorted_sources]
     total_weight = sum(weights) or 1.0
-    limits = [int(_TOTAL_SOURCE_BUDGET * w / total_weight) for w in weights]
+    limits = [int(max_budget * w / total_weight) for w in weights]
 
     parts = [f"Extract loyalty program information for: {program_name}\n"]
     parts.append("=" * 60)
@@ -229,8 +230,6 @@ def _extract_category(
         import time
         time.sleep(delay_seconds)
 
-    use_html = (category_name == "Tier System")
-    source_msg = _build_source_message(program_name, sources, use_html_tables=use_html)
     category_prompt = f"\nFor the category '{category_name}', extract only the fields defined in the schema."
 
     def emit_status(msg: str):
@@ -250,70 +249,82 @@ def _extract_category(
     for backend in backends:
         provider = backend["provider"]
         model_name = backend["model"]
-        try:
-            client = backend["client"]()
-        except Exception as exc:
-            log.warning("failed_to_initialize_client", provider=provider, model=model_name, error=str(exc))
-            emit_status(f"Failed to initialize client for {provider} on '{category_name}'. Trying next backend...")
-            continue
+
+        # Adapt budget to LLM provider capacity to avoid 413 Payload Too Large errors
+        budget = 200_000
+        if provider == "groq-broker":
+            budget = 25_000
+        elif provider == "ollama-cloud":
+            budget = 40_000
+
+        use_html = (category_name == "Tier System")
+        source_msg = _build_source_message(program_name, sources, use_html_tables=use_html, max_budget=budget)
 
         log.info("trying_extraction", provider=provider, model=model_name, category=category_name)
         emit_status(f"Extracting category '{category_name}' using {provider} ({model_name})...")
 
-        attempt_count = 0
-
-        @retry(
-            stop=stop_after_attempt(2),
-            wait=wait_exponential(multiplier=2, min=5, max=30),
-            reraise=True,
-        )
-        def _attempt():
-            nonlocal attempt_count
-            attempt_count += 1
-            if attempt_count > 1:
-                emit_status(f"Rate limit / API error on {provider} for '{category_name}'. Retrying (Attempt #{attempt_count})...")
-            return client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": source_msg + category_prompt},
-                ],
-                response_model=response_model,
-            )
-
-        try:
-            result = _attempt()
-            cost = _calculate_usage_cost(result, provider)
-            log.info("category_extracted", category=category_name, program=program_name, provider=provider, model=model_name, cost=cost)
-            emit_status(f"Successfully extracted category '{category_name}' using {provider}.")
-            return result, cost
-        except Exception as exc:
-            # Report failure/cooldown to key broker if it was a broker-managed client
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
             try:
-                err_msg = str(exc).lower()
-                is_quota = "quota" in err_msg or "429" in err_msg or "limit" in err_msg or "resource_exhausted" in err_msg
-                from backend.llm_client import gemini_broker, groq_broker
-                
-                # Extract the api_key value dynamically from the client if present
-                raw_key = getattr(getattr(client, "client", None), "api_key", None)
-                if raw_key:
-                    if provider == "gemini-broker":
-                        gemini_broker.report_failure(raw_key, is_quota_exhausted=is_quota)
-                    elif provider == "groq-broker":
-                        groq_broker.report_failure(raw_key, is_quota_exhausted=is_quota)
-            except Exception as broker_exc:
-                log.warning("failed_to_report_key_failure_to_broker", error=str(broker_exc))
+                client = backend["client"]()
+            except Exception as exc:
+                log.warning("failed_to_initialize_client", provider=provider, model=model_name, error=str(exc))
+                emit_status(f"Failed to initialize client for {provider} on '{category_name}'. Trying next backend...")
+                break
 
-            log.error(
-                "category_extraction_failed_for_backend",
-                category=category_name,
-                program=program_name,
-                provider=provider,
-                model=model_name,
-                error=str(exc)[:300],
-            )
-            emit_status(f"{provider} failed for category '{category_name}'. Falling back to next backend...")
-            continue
+            try:
+                result = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": source_msg + category_prompt},
+                    ],
+                    response_model=response_model,
+                )
+                cost = _calculate_usage_cost(result, provider)
+                log.info("category_extracted", category=category_name, program=program_name, provider=provider, model=model_name, cost=cost)
+                emit_status(f"Successfully extracted category '{category_name}' using {provider}.")
+                return result, cost
+            except Exception as exc:
+                err_msg = str(exc).lower()
+                is_rate_limit = "429" in err_msg or "rate" in err_msg or "limit" in err_msg or "resource_exhausted" in err_msg
+                
+                # Report failure/cooldown to key broker if it was a broker-managed client
+                try:
+                    is_quota = "plan and billing" in err_msg or "exceeded your current quota" in err_msg or "weekly usage limit" in err_msg or "daily quota" in err_msg or "quota_exhausted" in err_msg or "quota exceeded" in err_msg or "out of quota" in err_msg
+                    from backend.llm_client import gemini_broker, groq_broker
+                    
+                    # Extract the api_key value dynamically from the client if present
+                    raw_key = getattr(getattr(client, "client", None), "api_key", None)
+                    if raw_key:
+                        if provider == "gemini-broker":
+                            gemini_broker.report_failure(raw_key, is_quota_exhausted=is_quota)
+                        elif provider == "groq-broker":
+                            groq_broker.report_failure(raw_key, is_quota_exhausted=is_quota)
+                except Exception as broker_exc:
+                    log.warning("failed_to_report_key_failure_to_broker", error=str(broker_exc))
+
+                if attempt < max_attempts and is_rate_limit:
+                    log.warning("rate_limit_retry_waiting", category=category_name, provider=provider, attempt=attempt)
+                    # Countdown wait (60 seconds)
+                    for sec in range(60, 0, -1):
+                        emit_status(f"Rate limit on {provider} for '{category_name}'. Waiting {sec}s before retry...")
+                        import time
+                        time.sleep(1)
+                    continue  # Retry next loop iteration (will fetch fresh client/key)
+                
+                # If we get here, it either wasn't a rate limit, or we exhausted all attempts
+                log.error(
+                    "category_extraction_failed_for_backend",
+                    category=category_name,
+                    program=program_name,
+                    provider=provider,
+                    model=model_name,
+                    error=str(exc)[:300],
+                )
+                short_err = str(exc)[:150]
+                emit_status(f"{provider} failed for category '{category_name}' ({short_err}). Falling back to next backend...")
+                break  # Move to next backend
 
     log.error("all_backends_failed", category=category_name, program=program_name)
     emit_status(f"All backends failed to extract category '{category_name}'.")

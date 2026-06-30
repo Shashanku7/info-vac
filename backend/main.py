@@ -39,30 +39,33 @@ app = FastAPI(
 async def startup_event():
     from sqlalchemy import text
     from backend.db import AsyncSessionLocal
-    async with AsyncSessionLocal() as session:
-        try:
-            await session.execute(text("ALTER TABLE programs ADD COLUMN IF NOT EXISTS trace_url TEXT"))
-            await session.commit()
-        except Exception:
-            pass
+    try:
+        async with AsyncSessionLocal() as session:
+            try:
+                await session.execute(text("ALTER TABLE programs ADD COLUMN IF NOT EXISTS trace_url TEXT"))
+                await session.commit()
+            except Exception:
+                pass
 
-        try:
-            # Drop foreign key constraint on conversations.program_id to allow comparison_id
-            await session.execute(
-                text("ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_program_id_fkey")
-            )
-            await session.commit()
-        except Exception as e:
-            print("Failed to drop conversations foreign key constraint:", e)
+            try:
+                # Drop foreign key constraint on conversations.program_id to allow comparison_id
+                await session.execute(
+                    text("ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_program_id_fkey")
+                )
+                await session.commit()
+            except Exception as e:
+                print("Failed to drop conversations foreign key constraint:", e)
 
-        try:
-            # Clean up dangling program runs from previous crashed server instances
-            await session.execute(
-                text("UPDATE programs SET status = 'failed' WHERE status NOT IN ('complete', 'failed', 'pending')")
-            )
-            await session.commit()
-        except Exception as e:
-            print("Failed to clean up dangling programs:", e)
+            try:
+                # Clean up dangling program runs from previous crashed server instances
+                await session.execute(
+                    text("UPDATE programs SET status = 'failed' WHERE status NOT IN ('complete', 'failed', 'pending')")
+                )
+                await session.commit()
+            except Exception as e:
+                print("Failed to clean up dangling programs:", e)
+    except Exception as startup_err:
+        print("WARNING: Database connection failed during startup_event, skipping DB initialization:", startup_err)
 
 
 app.add_middleware(

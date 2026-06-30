@@ -9,7 +9,7 @@ import { RunnerStagePanel } from "@/components/analyst/RunnerStagePanel";
 import { ComparisonExportButton } from "@/components/analyst/ComparisonExportButton";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 import { getExtractedFields, getProgramSources, sendComparisonChatMessage, getComparisonChatHistory } from "@/lib/api";
-import { parseNarrative, splitNarrativeSegments, buildReferencesFromFields } from "@/lib/narrative";
+import { parseNarrative, splitNarrativeSegments, buildReferencesFromFields, calculateWordCount, WATERMARK_TEXT } from "@/lib/narrative";
 import { CitationBadge } from "./CitationBadge";
 import { ProgressCardLoader } from "./ProgressCardLoader";
 import { ChatWidget } from "./ChatWidget";
@@ -29,6 +29,14 @@ function ComparisonResults({ result }: { result: Comparison }) {
   // Comparison Chat States
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
+
+  const wordCount = useMemo(() => {
+    let text = result.analysis.executive_summary || "";
+    result.analysis.matrix.forEach((item) => {
+      text += " " + (item.rationale || "");
+    });
+    return calculateWordCount(text);
+  }, [result.analysis]);
 
   // Load chat history when comparison result changes
   useEffect(() => {
@@ -188,7 +196,7 @@ function ComparisonResults({ result }: { result: Comparison }) {
             Strategic Competitive Comparison
           </h1>
           <p className="text-xs text-stone-500 font-mono mt-1">
-            InfoVac Analyst Report · {programNames.join(" vs. ")} · {new Date().toLocaleDateString("en-GB")}
+            InfoVac Analyst Report · {programNames.join(" vs. ")} · {new Date().toLocaleDateString("en-GB")} · {wordCount} words
           </p>
         </div>
 
@@ -363,6 +371,14 @@ function ComparisonResults({ result }: { result: Comparison }) {
             </ol>
           </div>
         )}
+        {/* Center watermark with lines to left and right */}
+        <div className="relative flex py-6 items-center mt-8">
+          <div className="flex-grow border-t border-stone-200"></div>
+          <span className="flex-shrink mx-4 text-stone-400 text-[9px] font-mono uppercase tracking-wider">
+            {WATERMARK_TEXT}
+          </span>
+          <div className="flex-grow border-t border-stone-200"></div>
+        </div>
       </div>
 
       {/* Evidence Drawer */}

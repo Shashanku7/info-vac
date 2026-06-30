@@ -10,6 +10,8 @@ import {
   parseNarrative,
   splitNarrativeSegments,
   type ParsedReference,
+  calculateWordCount,
+  WATERMARK_TEXT,
 } from "@/lib/narrative";
 
 interface BriefViewProps {
@@ -149,12 +151,7 @@ export function BriefView({ narrative, fields, parsedRefs }: BriefViewProps) {
   }
 
   const wordCount = useMemo(() => {
-    const cleanText = (narrative.narrative || "")
-      .replace(/\(source:\s*https?:\/\/[^\s)]+\)/g, "") // remove source urls
-      .replace(/\[\d+\]/g, "") // remove citation numbers
-      .replace(/\[[a-zA-Z0-9_]+\]/g, "") // remove database schema tags
-      .trim();
-    return cleanText ? cleanText.split(/\s+/).length : 0;
+    return calculateWordCount(narrative.narrative);
   }, [narrative.narrative]);
 
   return (
@@ -191,6 +188,15 @@ export function BriefView({ narrative, fields, parsedRefs }: BriefViewProps) {
         </div>
 
         <ReferencesSection references={references} onRefClick={setDrawerUrl} />
+
+        {/* Center watermark with lines to left and right */}
+        <div className="relative flex py-6 items-center mt-8">
+          <div className="flex-grow border-t border-stone-200"></div>
+          <span className="flex-shrink mx-4 text-stone-400 text-[9px] font-mono uppercase tracking-wider">
+            {WATERMARK_TEXT}
+          </span>
+          <div className="flex-grow border-t border-stone-200"></div>
+        </div>
       </div>
 
       <EvidenceDrawer

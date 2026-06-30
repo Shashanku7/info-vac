@@ -18,6 +18,32 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# Wait for PostgreSQL to be ready to accept connections (prevents backend crash)
+Write-Host "Waiting for database to accept connections..." -ForegroundColor Yellow
+$portOpen = $false
+for ($i = 1; $i -le 15; $i++) {
+    $socket = New-Object Net.Sockets.TcpClient
+    try {
+        $connection = $socket.BeginConnect("127.0.0.1", 5432, $null, $null)
+        $success = $connection.AsyncWaitHandle.WaitOne(1000)
+        if ($success) {
+            $socket.EndConnect($connection)
+            $portOpen = $true
+            break
+        }
+    }
+    catch {}
+    finally {
+        if ($socket) { $socket.Close() }
+    }
+    Start-Sleep -Seconds 1
+}
+if (-not $portOpen) {
+    Write-Host "[WARNING] Database port 5432 did not open within 15 seconds. Starting backend anyway..." -ForegroundColor DarkYellow
+} else {
+    Write-Host "Database is ready!" -ForegroundColor Green
+}
+
 # 2. Start FastAPI Backend in a new window
 Write-Host "[2/3] Starting FastAPI Backend in a new window..." -ForegroundColor Yellow
 $backend = Start-Process -FilePath "cmd.exe" -ArgumentList "/c title InfoVac Backend && call .\venv_infovac\Scripts\activate.bat && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload" -PassThru
@@ -44,6 +70,10 @@ try {
     Write-Host "- Backend: http://localhost:8000" -ForegroundColor Gray
     Write-Host "- Frontend: http://localhost:3000" -ForegroundColor Gray
     Write-Host "`n>>> Press Ctrl+C in this window to stop both servers and clean up! <<<`n" -ForegroundColor Cyan
+
+    # Wait for the servers to initialize, then automatically open the frontend in the default browser
+    Start-Sleep -Seconds 3
+    Start-Process "http://localhost:3000"
 
     while ($true) {
         Start-Sleep -Seconds 1

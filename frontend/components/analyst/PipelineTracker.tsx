@@ -476,6 +476,14 @@ export function PipelineTracker({ events, isDegraded, isConnected }: PipelineTra
                   <div className="text-[9px] text-stone-400 uppercase">Ignored</div>
                 </div>
               </div>
+              {/* Progress bar */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center text-[10px] text-stone-500 font-mono">
+                  <span>Verification Progress</span>
+                  <span>{activeStage > 3 ? `${crawlsSuccess} / ${crawlsSuccess}` : `${crawlsSuccess} / ${candidates.length}`} active sources</span>
+                </div>
+                <Progress value={activeStage > 3 ? 100 : (candidates.length ? (crawlsSuccess / candidates.length) * 100 : 0)} className="h-1 bg-stone-100" />
+              </div>
 
               {/* Scrollable list of success pages */}
               <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar border border-stone-100 rounded-lg p-2 bg-stone-50/30">
