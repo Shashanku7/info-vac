@@ -380,6 +380,7 @@ function ComparisonResults({ result }: { result: Comparison }) {
           messages={chatMessages}
           isLoading={isChatLoading}
           onSend={sendComparisonMessage}
+          isComparative={true}
         />
       )}
     </div>

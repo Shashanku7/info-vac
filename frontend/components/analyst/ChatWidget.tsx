@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { ChatMessage } from "@/types/api";
 
-const QUICK_PROMPTS = [
+const SINGLE_QUICK_PROMPTS = [
   "Summarize the earn mechanics",
   "What are the top tier benefits?",
   "What changed recently?",
@@ -15,14 +15,130 @@ const QUICK_PROMPTS = [
   "What are members complaining about?",
 ];
 
+const COMPARATIVE_QUICK_PROMPTS = [
+  "What is the main differentiator between these programs?",
+  "Compare their tier qualification criteria",
+  "Which program has the better mobile app experience?",
+  "Which program offers the best reward value?",
+  "Compare their customer sentiment and complaints",
+];
+
 interface ChatWidgetProps {
   programId: string;
   messages: ChatMessage[];
   isLoading: boolean;
   onSend: (message: string) => void;
+  isComparative?: boolean;
 }
 
-export function ChatWidget({ programId, messages, isLoading, onSend }: ChatWidgetProps) {
+function getFollowUpSuggestions(text: string, isComparative: boolean, askedQuestions: string[]): string[] {
+  const t = (text || "").toLowerCase();
+  const suggestions: string[] = [];
+  const normalizedAsked = askedQuestions.map(q => q.toLowerCase().replace(/[?.\s]/g, ""));
+
+  const isDuplicate = (s: string) => {
+    const norm = s.toLowerCase().replace(/[?.\s]/g, "");
+    return normalizedAsked.includes(norm);
+  };
+
+  if (isComparative) {
+    if (t.includes("tier") || t.includes("status") || t.includes("level")) {
+      ["Which program has the easiest tier qualification?", "Compare their tier benefits side-by-side"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("earn") || t.includes("point") || t.includes("reward")) {
+      ["Which program offers better base earn rates?", "Are there bonus categories in either program?"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("redeem") || t.includes("burn") || t.includes("threshold")) {
+      ["Which program has a lower redemption threshold?", "How do point expiry policies compare?"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("app") || t.includes("digital") || t.includes("mobile")) {
+      ["Which program has the better mobile app rating?", "Compare their digital personalization features"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("sentiment") || t.includes("complaint") || t.includes("praise")) {
+      ["What are the key complaints for both?", "Which program is rated higher by members?"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("partner") || t.includes("partnership")) {
+      ["Which program has more partnerships?", "Compare their earn/burn partners"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+
+    if (suggestions.length < 3) {
+      const fallbacks = [
+        "What is the main differentiator between these programs?",
+        "Which program offers the best overall reward value?",
+        "Summarize the key advantages of each",
+        "Compare their qualification requirements"
+      ];
+      for (const f of fallbacks) {
+        if (!isDuplicate(f) && !suggestions.includes(f)) {
+          suggestions.push(f);
+        }
+        if (suggestions.length >= 3) break;
+      }
+    }
+  } else {
+    if (t.includes("tier") || t.includes("status") || t.includes("level")) {
+      ["How do members qualify for the top tier?", "What are the qualification periods?"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("earn") || t.includes("point") || t.includes("reward")) {
+      ["What is the base earn rate?", "Can members earn on non-transactional actions?"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("redeem") || t.includes("burn") || t.includes("threshold")) {
+      ["What are the main redemption options?", "Do points expire in this program?"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("app") || t.includes("digital") || t.includes("mobile")) {
+      ["What is the mobile app store rating?", "Does the app support gamification?"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("sentiment") || t.includes("complaint") || t.includes("praise")) {
+      ["What are the most common member complaints?", "What do members praise most about the program?"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+    if (t.includes("partner") || t.includes("partnership")) {
+      ["Who are the key earn/burn partners?", "How do the partnerships work?"].forEach(c => {
+        if (!isDuplicate(c)) suggestions.push(c);
+      });
+    }
+
+    if (suggestions.length < 3) {
+      const fallbacks = [
+        "Summarize the key program benefits",
+        "What are the qualification criteria for the tiers?",
+        "What is the overall customer sentiment?",
+        "What are the program's main weaknesses?"
+      ];
+      for (const f of fallbacks) {
+        if (!isDuplicate(f) && !suggestions.includes(f)) {
+          suggestions.push(f);
+        }
+        if (suggestions.length >= 3) break;
+      }
+    }
+  }
+
+  return suggestions.slice(0, 3);
+}
+
+export function ChatWidget({ programId, messages, isLoading, onSend, isComparative = false }: ChatWidgetProps) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [dimensions, setDimensions] = useState({ width: 380, height: 520 });
@@ -103,11 +219,15 @@ export function ChatWidget({ programId, messages, isLoading, onSend }: ChatWidge
     return (
       <div className="space-y-1.5">
         {lines.map((line, lineIdx) => {
-          const isBullet = line.trim().startsWith("* ") || line.trim().startsWith("- ");
-          const isNumbered = /^\d+\.\s/.test(line.trim());
+          const headingMatch = line.trim().match(/^(#{1,6})\s+(.*)/);
+          const isHeading = !!headingMatch;
+          const isBullet = !isHeading && (line.trim().startsWith("* ") || line.trim().startsWith("- "));
+          const isNumbered = !isHeading && !isBullet && /^\d+\.\s/.test(line.trim());
 
           let cleanLine = line;
-          if (isBullet) {
+          if (isHeading) {
+            cleanLine = headingMatch[2];
+          } else if (isBullet) {
             cleanLine = line.trim().substring(2);
           } else if (isNumbered) {
             const match = line.match(/^(\d+\.\s)(.*)/);
@@ -153,6 +273,23 @@ export function ChatWidget({ programId, messages, isLoading, onSend }: ChatWidge
 
           if (lastIdx < cleanLine.length) {
             parts.push(cleanLine.substring(lastIdx));
+          }
+
+          if (isHeading) {
+            const level = headingMatch[1].length;
+            const headingClasses = 
+              level === 1 ? "text-xs font-bold text-stone-900 mt-2 mb-1" :
+              level === 2 ? "text-[11px] font-bold text-stone-900 mt-1.5 mb-0.5" :
+              level === 3 ? "text-[11px] font-semibold text-[#0F766E] mt-1.5 mb-0.5" :
+              "text-[10px] font-medium text-stone-850 mt-1 mb-0.5";
+            
+            const colorClass = isUser ? "text-white" : "";
+            
+            return (
+              <div key={lineIdx} className={`${headingClasses} ${colorClass} leading-snug`}>
+                {parts}
+              </div>
+            );
           }
 
           if (isBullet) {
@@ -257,14 +394,14 @@ export function ChatWidget({ programId, messages, isLoading, onSend }: ChatWidge
             {messages.length === 0 && (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground mb-3">
-                  Ask anything about this program. Try:
+                  {isComparative ? "Ask anything comparing these programs. Try:" : "Ask anything about this program. Try:"}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {QUICK_PROMPTS.map((p) => (
+                  {(isComparative ? COMPARATIVE_QUICK_PROMPTS : SINGLE_QUICK_PROMPTS).map((p) => (
                     <Badge
                       key={p}
                       variant="outline"
-                      className="cursor-pointer text-[10px] hover:bg-stone-100 transition-colors"
+                      className="cursor-pointer text-[10px] hover:bg-stone-100 transition-colors text-stone-600 border-stone-200"
                       onClick={() => onSend(p)}
                     >
                       {p}
@@ -303,6 +440,32 @@ export function ChatWidget({ programId, messages, isLoading, onSend }: ChatWidge
                   </div>
                 </div>
               )}
+
+              {/* Follow-up suggestions */}
+              {!isLoading && messages.length > 0 && messages[messages.length - 1].role === "assistant" && !messages[messages.length - 1].content.startsWith("⚠️") && (
+                <div className="space-y-2 pt-2 animate-in fade-in duration-200">
+                  <p className="text-[10px] text-muted-foreground font-medium">
+                    Suggested follow-up:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {getFollowUpSuggestions(
+                      messages[messages.length - 1].content,
+                      isComparative,
+                      messages.filter((m) => m.role === "user").map((m) => m.content)
+                    ).map((p) => (
+                      <Badge
+                        key={p}
+                        variant="outline"
+                        className="cursor-pointer text-[10px] transition-all text-stone-600 border-stone-200 hover:border-[#0F766E] hover:text-[#0F766E] hover:bg-stone-50"
+                        onClick={() => onSend(p)}
+                      >
+                        {p}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div ref={bottomRef} />
             </div>
           </div>

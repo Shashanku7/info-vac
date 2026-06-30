@@ -11,6 +11,9 @@ import { SourcesTab } from "@/components/analyst/SourcesTab";
 import { FieldsGrid } from "@/components/analyst/FieldsGrid";
 import { ChatWidget } from "@/components/analyst/ChatWidget";
 import { EvolutionTab } from "@/components/analyst/EvolutionTab";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { RunnerStagePanel } from "./RunnerStagePanel";
 import { ProgressCardLoader } from "./ProgressCardLoader";
 import type { Program, Narrative, ExtractedField, PipelineEvent } from "@/types/api";
 
@@ -55,6 +58,7 @@ interface SingleProgramViewProps {
   isChatLoading: boolean;
   sendMessage: (programId: string, msg: string) => Promise<void>;
   handleForceReanalyse: () => void;
+  onClearWorkspace: () => void;
 }
 
 export function SingleProgramView({
@@ -72,42 +76,33 @@ export function SingleProgramView({
   isChatLoading,
   sendMessage,
   handleForceReanalyse,
+  onClearWorkspace,
 }: SingleProgramViewProps) {
   const isRunning = phase === "running";
   const isComplete = phase === "complete";
   const isFailed = phase === "failed";
 
-  const activeSubtitle = (() => {
-    const raw = events[events.length - 1]?.detail;
-    if (!raw) return "Running extraction & verification";
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed.message) return parsed.message;
-      if (parsed.item?.field_name) {
-        return `Extracted ${parsed.item.field_name.replace(/_/g, " ")} (${parsed.count}/${parsed.total})`;
-      }
-      if (parsed.item?.title || parsed.item?.url) {
-        const titleOrUrl = parsed.item.title || parsed.item.url;
-        const stage = events[events.length - 1]?.stage;
-        if (stage === "discovering_sources") {
-          return `Discovered: ${titleOrUrl}`;
-        }
-        if (stage === "crawling_sources") {
-          return `Crawling: ${titleOrUrl}`;
-        }
-        return titleOrUrl;
-      }
-      return raw;
-    } catch {
-      return raw;
-    }
-  })();
+  const lastEvent = events[events.length - 1];
+  const progressVal = lastEvent ? lastEvent.progress : (isComplete ? 1.0 : 0.05);
+  const statusVal = program?.status === "complete" ? "complete" : (program?.status === "failed" ? "failed" : (lastEvent?.stage || "running"));
+
+  const runner = programId ? {
+    id: programId,
+    name: program?.name || "Loading program...",
+    status: statusVal,
+    progress: progressVal,
+  } : null;
+
+  const isRunnerComplete = runner?.status === "complete";
+  const isRunnerFailed   = runner?.status === "failed";
+  const isRunnerActive   = runner && !isRunnerComplete && !isRunnerFailed;
+  const isExpanded = trackerExpanded;
 
   return (
     <>
       {/* Error banner */}
       {(isFailed || error) && (
-        <Alert className="border-red-200 bg-red-50 max-w-2xl mx-auto">
+        <Alert className="border-red-200 bg-red-50 max-w-2xl mx-auto mb-4">
           <AlertCircle size={14} strokeWidth={1.5} className="text-red-500" />
           <AlertDescription className="text-xs text-red-700">
             {error ?? "Pipeline failed. Check the server logs."}
@@ -115,62 +110,78 @@ export function SingleProgramView({
         </Alert>
       )}
 
-      {/* Single program progress card while running */}
-      {isRunning && (
-        <ProgressCardLoader
-          title="Analyzing loyalty program data..."
-          subtitle={activeSubtitle}
-          stageName={events[events.length - 1]?.stage?.replace(/_/g, " ") || "Crawling sources"}
-          progressPercent={(events[events.length - 1]?.progress ?? 0.05) * 100}
-          className="mb-6"
-        />
+      {/* Header with Clear Workspace button */}
+      {runner && (
+        <div className="flex items-center justify-between border-b border-border pb-4 mb-6">
+          <div>
+            <h2 className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+              Single Program Analysis
+            </h2>
+            <p className="text-[11px] text-muted-foreground">
+              Real-time loyalty program intelligence and analyst brief generation.
+            </p>
+          </div>
+          <button
+            onClick={onClearWorkspace}
+            className="text-xs text-[#0F766E] border border-[#0F766E]/20 bg-[#0F766E]/5 hover:bg-[#0F766E]/10 px-3 h-8 rounded-md transition-all font-medium"
+          >
+            Clear Workspace
+          </button>
+        </div>
       )}
 
-      {/* Pipeline tracker (status logs) */}
-      {(isRunning || isComplete || isFailed) && (
-        <div className="border border-border rounded-lg bg-white overflow-hidden mb-6">
-          {/* Tracker header — always visible */}
-          <button
-            onClick={() => setTrackerExpanded((v) => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-stone-50 transition-colors cursor-pointer"
+      {/* Runner status card (reuses the exact same card layout/components as MultiFlowWorkspace) */}
+      {runner && (
+        <div className="space-y-4 mb-6">
+          <Card
+            onClick={() => setTrackerExpanded(!isExpanded)}
+            className={`shadow-none bg-white relative overflow-hidden transition-all duration-200 cursor-pointer hover:border-[#0F766E]/40 hover:shadow-sm max-w-md ${
+              isExpanded ? "ring-1 ring-[#0F766E] border-[#0F766E]" : "border-border"
+            }`}
           >
-            <div className="flex items-center gap-2">
-              {isComplete ? (
-                <CheckCircle2 size={14} strokeWidth={1.5} className="text-[#0F766E]" />
-              ) : isFailed ? (
-                <AlertCircle size={14} strokeWidth={1.5} className="text-red-500" />
-              ) : (
-                <Loader2 size={14} className="animate-spin text-[#0F766E]" />
-              )}
-              <span className="text-xs font-medium text-stone-700">
-                {isComplete
-                  ? `Pipeline complete · ${events.length} stage${events.length !== 1 ? "s" : ""}`
-                  : isFailed
-                  ? `Pipeline failed · ${events.length} stage${events.length !== 1 ? "s" : ""}`
-                  : `Pipeline running · ${events.length} stage${events.length !== 1 ? "s" : ""}`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {trackerExpanded ? "Hide details" : "Show details"}
-              </span>
-              {trackerExpanded ? (
-                <ChevronUp size={13} strokeWidth={1.5} className="text-muted-foreground" />
-              ) : (
-                <ChevronDown size={13} strokeWidth={1.5} className="text-muted-foreground" />
-              )}
-            </div>
-          </button>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-stone-850 truncate pr-2">{runner.name}</span>
+                <Badge
+                  variant={isRunnerComplete ? "outline" : isRunnerFailed ? "destructive" : "secondary"}
+                  className={`text-[10px] h-5 px-1.5 shrink-0 ${
+                    isRunnerComplete ? "border-emerald-300 text-emerald-700 bg-emerald-50" : ""
+                  }`}
+                >
+                  {isRunnerActive && <Loader2 size={8} className="animate-spin mr-1 text-[#0F766E]" />}
+                  {runner.status}
+                </Badge>
+              </div>
 
-          {/* Collapsible tracker body */}
-          {trackerExpanded && (
-            <div className="border-t border-border">
-              <PipelineTracker
-                events={events}
-                isDegraded={isDegraded}
-                isConnected={events.length > 0}
-              />
-            </div>
+              {/* Progress bar */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-stone-500">
+                  <span>Pipeline progress</span>
+                  <span>{Math.round(runner.progress * 100)}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-stone-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isRunnerComplete ? "bg-emerald-500" : isRunnerFailed ? "bg-red-500" : "bg-[#0F766E]"
+                    }`}
+                    style={{ width: `${runner.progress * 100}%` }}
+                  />
+                </div>
+              </div>
+              <div className="text-[10px] text-stone-400 text-right">
+                {isExpanded ? "Click to collapse" : "Click to view stages"}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Expanded stage panel */}
+          {isExpanded && (
+            <RunnerStagePanel
+              runnerId={runner.id}
+              runnerName={runner.name}
+              status={runner.status}
+              onClose={() => setTrackerExpanded(false)}
+            />
           )}
         </div>
       )}

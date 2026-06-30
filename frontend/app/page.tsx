@@ -168,19 +168,10 @@ export default function AnalystWorkspace() {
       const runners = [];
       for (const programName of names) {
         try {
-          // Search for an exact-name match (case-insensitive) among COMPLETE programs
-          const matches = await searchPrograms(programName);
-          const existing = matches.find(
-            (m) => m.name.toLowerCase().trim() === programName.toLowerCase().trim()
-          );
-          if (existing) {
-            runners.push({ id: existing.id, name: existing.name, status: "complete", progress: 1.0 });
-          } else {
-            // No cache hit — create a brand-new row and run fresh
-            const prog = await createProgram(programName, true);
-            await runProgram(prog.id);
-            runners.push({ id: prog.id, name: prog.name, status: "pending", progress: 0.05 });
-          }
+          // Always create a brand-new row and run fresh (no cache)
+          const prog = await createProgram(programName, true);
+          await runProgram(prog.id);
+          runners.push({ id: prog.id, name: prog.name, status: "pending", progress: 0.05 });
         } catch (err) {
           setMultiError(`Failed to queue "${programName}": ${err instanceof Error ? err.message : String(err)}`);
           setIsMultiFlow(false);
@@ -203,10 +194,7 @@ export default function AnalystWorkspace() {
     setSearchQuery(prog.name);
     setPendingSearch(null);
     setIsMultiFlow(false);
-    reset();
-    setTrackerExpanded(false);
-    setProgramId(prog.id);
-    localStorage.setItem("infovac_program_id", prog.id);
+    await launchFresh(prog.name);
   }
 
   async function handleRunFresh() {
@@ -311,6 +299,8 @@ export default function AnalystWorkspace() {
             onSubmit={handleSubmit}
             onSelectExisting={handleSelectExisting}
             isLoading={isRunning}
+            isMultiFlow={isMultiFlow}
+            onModeChange={setIsMultiFlow}
           />
         </div>
 
@@ -345,6 +335,7 @@ export default function AnalystWorkspace() {
             isChatLoading={isChatLoading}
             sendMessage={sendMessage}
             handleForceReanalyse={handleForceReanalyse}
+            onClearWorkspace={handleReset}
           />
         )}
       </main>

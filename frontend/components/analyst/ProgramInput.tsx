@@ -12,6 +12,8 @@ interface ProgramInputProps {
   onSubmit: (input: string | string[]) => void;
   onSelectExisting?: (program: Program) => void;
   isLoading?: boolean;
+  isMultiFlow: boolean;
+  onModeChange: (isMultiFlow: boolean) => void;
 }
 
 function formatRelative(isoDate: string): string {
@@ -205,8 +207,11 @@ export function ProgramInput({
   onSubmit,
   onSelectExisting,
   isLoading = false,
+  isMultiFlow,
+  onModeChange,
 }: ProgramInputProps) {
-  const [mode, setMode] = useState<"single" | "compare">("single");
+  const mode = isMultiFlow ? "compare" : "single";
+  const setMode = (m: "single" | "compare") => onModeChange(m === "compare");
   const [singleValue, setSingleValue] = useState(initialValue || "");
   const [compareValues, setCompareValues] = useState<string[]>(["", ""]);
 

@@ -47,6 +47,15 @@ async def startup_event():
             pass
 
         try:
+            # Drop foreign key constraint on conversations.program_id to allow comparison_id
+            await session.execute(
+                text("ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_program_id_fkey")
+            )
+            await session.commit()
+        except Exception as e:
+            print("Failed to drop conversations foreign key constraint:", e)
+
+        try:
             # Clean up dangling program runs from previous crashed server instances
             await session.execute(
                 text("UPDATE programs SET status = 'failed' WHERE status NOT IN ('complete', 'failed', 'pending')")
