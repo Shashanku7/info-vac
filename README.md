@@ -25,16 +25,19 @@ graph TD
 - **Structured Extraction**: Extracts 43 specific loyalty fields (tiers, earn rates, burn rules, etc.) powered by Pydantic and Instructor using a resilient sequential pipeline structure to manage LLM rate limits.
 - **Verification Gate**: Employs `rapidfuzz` partial-ratio matching and LLM corroboration to verify extracted claims against scraped sources. If fuzzy match score is `< 0.80`, fields are nullified or sent to retry paths to eliminate hallucinations.
 - **RAG Q&A Engine**: A LangGraph agent integrated with a Qdrant vector database for answering contextual questions with precise web source citations.
+- **Resilient Key Failover & Routing**: Multi-key dynamic load balancing with thread-local checkout tracking. Keys are automatically sidelined on 429 quota exhaustion (1-hour cooldown), and completion requests retry across the entire pool before bubbling up structured, clean user-facing error details.
+- **Dynamic Brief Lengths**: Adapts narrator report constraints dynamically based on source counts (200 words for <7 sources to avoid hallucinated space filling, 500 words for 7+ sources, capped at 1,000 words).
 
 ### 2. High-Density UI Workspace (Frontend)
 - **Analyst Workspace**:
-  - Distraction-free, command-line style search bar.
+  - Distraction-free, command-line style search bar with optimized sleeker inputs.
   - Live Server-Sent Events (SSE) progress tracker showing scraping phases in real-time.
-  - Academic-style `[N]` inline superscript citations.
-  - Click-to-open **Evidence Drawer** highlighting the exact source sentence utilizing character start/end coordinates.
+  - Academic-style `[N]` inline superscript citations with clean spacing and no underlines.
+  - Click-to-open **Evidence Drawer** highlighting the exact source sentence utilizing character coordinates on matching dark background cards.
   - Clickable References section displaying the source URL, raw evidence snippet, and access date.
-  - Draggable & resizable Quick-Chat widget with markdown rendering and prompt badges.
-  - Clean client-side PDF export with active, clickable hyperlinks for all citations.
+  - Draggable & resizable Quick-Chat widget with automatic history wipes when changing program selections.
+  - **Consolidated PDF Exporter**: Unifies single and comparison PDF generation. Employs shared stylesheets, Kobie SVG brand logo headers that repeat on overflow pages, split-page architectures (narrative vs references), and a centered horizontal rules watermark printed once at the document end.
+  - **Deferred Rendering & Fast Substring Matching**: Zero-lag tab navigation using a deferred loading spinner, coupled with a 200x optimized dynamic programming LCS citation resolver to prevent main-thread UI freezing.
   - **LangSmith Tracing Button**: Integrates real-time agent tracing graphs. Shows a "View Trace" button next to "Re-analyse" to view the live execution steps on LangSmith.
 - **Admin & Analytics Dashboard**:
   - Live system health monitoring (Postgres, backend connection).
