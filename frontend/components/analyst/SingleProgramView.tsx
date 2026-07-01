@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Activity, RefreshCw, Circle, CheckCircle2, ArrowRight } from "lucide-react";
+import { Loader2, Activity, RefreshCw, Circle, CheckCircle2, ArrowRight, AlertCircle } from "lucide-react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

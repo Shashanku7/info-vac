@@ -50,7 +50,7 @@ def _get_available_backends() -> list[dict[str, Any]]:
                 OpenAI(
                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                     api_key=gemini_broker.get_key(),
-                    timeout=30.0,
+                    timeout=60.0,
                 ),
                 mode=instructor.Mode.JSON,
             )
@@ -66,7 +66,7 @@ def _get_available_backends() -> list[dict[str, Any]]:
                 OpenAI(
                     base_url="https://ollama.com/v1",
                     api_key=ollama_key,
-                    timeout=30.0,
+                    timeout=60.0,
                 ),
                 mode=instructor.Mode.JSON,
             )
@@ -82,7 +82,7 @@ def _get_available_backends() -> list[dict[str, Any]]:
                 OpenAI(
                     base_url="https://api.groq.com/openai/v1",
                     api_key=groq_broker.get_key(),
-                    timeout=30.0,
+                    timeout=60.0,
                 ),
                 mode=instructor.Mode.JSON,
             )
@@ -95,7 +95,7 @@ def _get_available_backends() -> list[dict[str, Any]]:
             "provider": "anthropic",
             "model": "claude-3-5-haiku-20241022",
             "client": lambda: instructor.from_anthropic(
-                anthropic.Anthropic(api_key=anthropic_key, timeout=30.0)
+                anthropic.Anthropic(api_key=anthropic_key, timeout=60.0)
             )
         })
 
@@ -106,7 +106,7 @@ def _get_available_backends() -> list[dict[str, Any]]:
             "provider": "openai",
             "model": "gpt-4o-mini",
             "client": lambda: instructor.from_openai(
-                OpenAI(api_key=openai_key, timeout=30.0),
+                OpenAI(api_key=openai_key, timeout=60.0),
                 mode=instructor.Mode.JSON,
             )
         })
@@ -179,14 +179,19 @@ class FallbackCompletions:
                     if "429" in exc_str or "quota" in exc_str or "rate limit" in exc_str or "limit exceeded" in exc_str:
                         is_quota = True
 
+                    # Catch transient network/timeout/gateway errors as well to trigger key rotation
+                    is_transient = False
+                    if any(x in exc_str for x in ["timeout", "timed out", "connection", "connect", "500", "502", "503", "504", "gateway", "service unavailable"]):
+                        is_transient = True
+
                     # Report failure to appropriate key broker
                     if provider == "gemini-broker":
                         gemini_broker.report_last_key_failure(is_quota_exhausted=is_quota)
                     elif provider == "groq-broker":
                         groq_broker.report_last_key_failure(is_quota_exhausted=is_quota)
                     
-                    # If it's not a rate-limit/quota issue, try next provider directly
-                    if not is_quota:
+                    # If it's neither a rate-limit/quota issue nor a transient error, try next provider directly
+                    if not (is_quota or is_transient):
                         break
         if last_exc:
             raise last_exc

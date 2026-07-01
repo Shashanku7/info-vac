@@ -265,6 +265,14 @@ async def get_program_sources(program_id: uuid.UUID, db: AsyncSession = Depends(
     return result.scalars().all()
 
 
+@app.get("/api/sources/count")
+async def get_sources_count(db: AsyncSession = Depends(get_db)):
+    """Return the total count of crawled sources in the database."""
+    result = await db.execute(select(func.count(Source.id)))
+    count = result.scalar() or 0
+    return {"count": count}
+
+
 @app.post("/api/programs", response_model=ProgramResponse, status_code=200)
 async def create_program(body: ProgramCreate, db: AsyncSession = Depends(get_db)):
     """Create a program row and return its UUID. Does NOT start the pipeline.
@@ -457,8 +465,9 @@ async def get_comparison(comparison_id: uuid.UUID, db: AsyncSession = Depends(ge
         raise HTTPException(status_code=404, detail="Comparison not found.")
     return {
         "comparison_id": str(comparison.id),
-        "program_a_id": str(comparison.program_a_id),
-        "program_b_id": str(comparison.program_b_id),
+        "program_ids": [str(p) for p in comparison.program_ids] if comparison.program_ids else [str(comparison.program_a_id), str(comparison.program_b_id)],
+        "program_a_id": str(comparison.program_a_id) if comparison.program_a_id else None,
+        "program_b_id": str(comparison.program_b_id) if comparison.program_b_id else None,
         "analysis": comparison.analysis_json,
         "created_at": comparison.created_at.isoformat(),
     }

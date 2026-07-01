@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Loader2, Sparkles, TrendingUp, TrendingDown, AlertCircle, ExternalLink, Activity, ArrowRight } from "lucide-react";
+import { Loader2, Sparkles, TrendingUp, TrendingDown, AlertCircle, ExternalLink, Activity, ArrowRight, Copy, Check, FileText, Table } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -13,10 +13,20 @@ import { splitNarrativeSegments, buildReferencesFromFields, calculateWordCount, 
 import { CitationBadge } from "./CitationBadge";
 import { ProgressCardLoader } from "./ProgressCardLoader";
 import { ChatWidget } from "./ChatWidget";
+import { exportComparisonPDF, exportComparisonCSV } from "./ExportBar";
 import type { Comparison, ExtractedField, ChatMessage } from "@/types/api";
 
 // ── Comparison Results ───────────────────────────────────────────────────────
-function ComparisonResults({ result }: { result: Comparison }) {
+function ComparisonResults({
+  result,
+  runners,
+  onReset
+}: {
+  result: Comparison;
+  runners: any[];
+  onReset: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"brief" | "matrix" | "parameters" | "highlights" | "opportunities">("brief");
   const programNames = result.analysis.matrix[0]?.rankings || [];
   const [comparedData, setComparedData] = useState<Array<{
     id: string;
@@ -25,6 +35,50 @@ function ComparisonResults({ result }: { result: Comparison }) {
   }>>([]);
   const [fetchingData, setFetchingData] = useState(false);
   const [drawerUrl, setDrawerUrl] = useState<string | null>(null);
+
+  // Export & Action States
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [csvLoading, setCsvLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handlePDFExport = async () => {
+    setPdfLoading(true);
+    try {
+      await exportComparisonPDF(result, programNames);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  const handleCSVExport = async () => {
+    setCsvLoading(true);
+    try {
+      await exportComparisonCSV(result, programNames);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCsvLoading(false);
+    }
+  };
+
+  const handleCopyBrief = () => {
+    let briefText = `Strategic Competitive Comparison Report\n`;
+    briefText += `Programs: ${programNames.join(" vs. ")}\n\n`;
+    briefText += `Executive Summary:\n${result.analysis.executive_summary || ""}\n\n`;
+    briefText += `Market Matrix:\n`;
+    result.analysis.matrix.forEach((item: any) => {
+      briefText += `Category: ${item.category}\n`;
+      briefText += `Winner: ${item.rankings?.[0] || "Tie"}\n`;
+      briefText += `Rationale: ${item.rationale || ""}\n\n`;
+    });
+    briefText += `Strategic Recommendations:\n${result.analysis.strategic_recommendations || ""}\n`;
+    
+    navigator.clipboard.writeText(briefText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // Comparison Chat States
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -121,7 +175,7 @@ function ComparisonResults({ result }: { result: Comparison }) {
 
       const segments = splitNarrativeSegments(trimmed, urlMap);
       return (
-        <p key={i} className="text-xs leading-[1.75] mb-3" style={{ color: "rgba(255,255,255,0.7)" }}>
+        <p key={i} className="text-xs leading-[1.75] mb-3" style={{ color: "rgba(5,28,44,0.8)" }}>
           {segments.map((seg, j) =>
             seg.type === "text" ? (
               <span key={j}>{seg.text}</span>
@@ -148,6 +202,12 @@ function ComparisonResults({ result }: { result: Comparison }) {
     { label: "Loyalty Tiers Enabled", name: "has_tiers" },
   ];
 
+  // Early-return wrapper: if any runner is not complete, return null
+  const allReady = runners.length >= 2 && runners.every(r => r.status === "complete");
+  if (!allReady) {
+    return null;
+  }
+
   if (fetchingData || comparedData.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 space-y-3 rounded-[10px] max-w-4xl mx-auto" style={{ backgroundColor: "var(--kobie-ocean)", border: "1px solid rgba(255,255,255,0.08)" }}>
@@ -159,334 +219,566 @@ function ComparisonResults({ result }: { result: Comparison }) {
   }
 
   return (
-    <div className="space-y-6 mt-6">
-      {/* Export Header */}
-      <div className="flex items-center justify-between px-1 max-w-4xl mx-auto">
-        <span className="kobie-overline" style={{ fontSize: "11px", marginBottom: 0 }}>
-          Comparative Analysis Report
-        </span>
-        <ComparisonExportButton comparison={result} programNames={programNames} />
-      </div>
-
-      {/* Document Sheet */}
-      <div className="rounded-[10px] p-8 max-w-4xl mx-auto" style={{ backgroundColor: "var(--kobie-ocean)", border: "1px solid rgba(255,255,255,0.08)" }}>
-        {/* Document Header */}
-        <div className="pb-6 mb-8 text-center sm:text-left" style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-          <h1 className="text-2xl font-black text-white tracking-tight" style={{ fontFamily: "var(--kobie-font-heading)" }}>
-            Strategic Competitive Comparison
-          </h1>
-          <p className="text-xs font-mono mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
-            Kobie Intelligence Report · {programNames.join(" vs. ")} · {new Date().toLocaleDateString("en-GB")} · {wordCount} words
-          </p>
-
-          {/* Inline Comparison Metrics */}
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-[10px] font-mono text-white/40 mt-3 pt-3 border-t border-white/5">
-            <div>Programs Compared: <span className="text-[#fd7f4f] font-bold">{programNames.length}</span></div>
-            <div>Shared Features: <span className="text-white font-bold">27</span></div>
-            <div>Unique Differentiators: <span className="text-white font-bold">11</span></div>
-            <div>Overall Confidence: <span className="text-emerald-400 font-bold">92%</span></div>
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start text-left mt-6">
+      
+      {/* Left Column (Metadata + Actions, 1/3 width) */}
+      <div className="lg:col-span-4 space-y-6">
+        
+        {/* Main Comparison Status Card */}
+        <div
+          className="rounded-[10px] p-5 space-y-4"
+          style={{
+            backgroundColor: "var(--kobie-ocean)",
+            border: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
+          <div>
+            <span className="kobie-overline">Comparative Analysis</span>
+            <h2
+              className="text-lg font-black tracking-tight text-white"
+              style={{ fontFamily: "var(--kobie-font-heading)" }}
+            >
+              Strategic Comparison
+            </h2>
+            <p className="text-xs font-semibold text-white/50 leading-relaxed mt-1">
+              {programNames.join(" vs. ")}
+            </p>
           </div>
-        </div>
 
-        {/* Executive Summary Top Winner Card */}
-        {(() => {
-          const tallies: Record<string, number> = {};
-          programNames.forEach(name => { tallies[name] = 0; });
-          result.analysis.matrix.forEach(item => {
-            if (item.rankings && item.rankings[0]) {
-              const rowWin = item.rankings[0];
-              tallies[rowWin] = (tallies[rowWin] || 0) + 1;
-            }
-          });
-          const sorted = Object.entries(tallies).sort((a, b) => b[1] - a[1]);
-          const winner = sorted[0]?.[0] || programNames[0] || "Tie / Equal";
-          const whyStrengths = result.analysis.matrix
-            .filter(item => item.rankings?.[0] === winner)
-            .map(item => item.category);
-          const why = whyStrengths.length > 0 ? whyStrengths.slice(0, 3) : ["Ecosystem Integration", "Redemption Utility", "Digital Mobile Experience"];
+          {/* Metrics List */}
+          <div className="space-y-2 py-3 border-t border-b border-white/5 font-mono text-[10px] uppercase tracking-wider text-left">
+            <div className="flex justify-between">
+              <span className="text-white/40">Programs Compared</span>
+              <span className="text-white font-bold">{programNames.length}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/40">Shared Features</span>
+              <span className="text-[#fd7f4f] font-bold">27</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/40">Unique Differentiators</span>
+              <span className="text-white font-bold">11</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/40">Overall Confidence</span>
+              <span className="text-emerald-400 font-bold">92%</span>
+            </div>
+          </div>
 
-          return (
-            <div
-              className="mb-8 p-5 rounded-[10px] grid grid-cols-1 md:grid-cols-12 gap-4 text-left"
+          {/* Download & Clear Buttons Stack */}
+          <div className="flex flex-col gap-2 pt-2">
+            <div className="flex justify-center w-full">
+              <ComparisonExportButton comparison={result} programNames={programNames} />
+            </div>
+            <button
+              onClick={onReset}
+              className="w-full text-xs font-bold h-9 px-4 rounded-[3px] transition-all duration-200 cursor-pointer"
               style={{
-                background: "linear-gradient(135deg, rgba(253,127,79,0.08) 0%, rgba(255,255,255,0.01) 100%)",
-                borderColor: "rgba(253,127,79,0.22)",
-                borderWidth: "1px",
-                borderStyle: "solid"
+                fontFamily: "var(--kobie-font-heading)",
+                color: "rgba(255,255,255,0.5)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "transparent",
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.color = "#fd7f4f";
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(253,127,79,0.4)";
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.5)";
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
               }}
             >
-              <div className="md:col-span-4 space-y-1">
-                <span className="text-[9px] uppercase tracking-widest text-[#fd7f4f] font-bold block font-mono">Comparative Winner</span>
-                <div className="text-lg font-black text-white">{winner}</div>
-                <div className="text-[9px] text-white/40 font-mono">Confidence: 91%</div>
-              </div>
-              <div className="md:col-span-8 space-y-1.5">
-                <span className="text-[9px] uppercase tracking-widest text-white/35 font-bold block font-mono">Redemption & Integration Advantages</span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {why.map((strength, sIdx) => (
-                    <div key={sIdx} className="p-2 rounded bg-black/25 border border-white/5 text-[9px] font-bold text-white flex items-center gap-1.5">
-                      <span className="text-[#fd7f4f]">✓</span> {strength}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Executive Summary */}
-        <div className="mb-8">
-          <h2 className="text-sm font-bold mb-3 tracking-wide uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: "var(--kobie-font-heading)" }}>
-            Executive Summary
-          </h2>
-          <div className="leading-[1.75]">
-            {renderComparisonParagraphs(result.analysis.executive_summary)}
+              Clear Workspace
+            </button>
           </div>
         </div>
 
-        {/* Market Matrix Table */}
-        <div className="mb-8">
-          <h2 className="text-sm font-bold mb-3 tracking-wide uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: "var(--kobie-font-heading)" }}>
-            Category Rankings & Matrix
-          </h2>
-          <div className="overflow-x-auto rounded-[8px] overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
-            <table className="min-w-full text-left text-xs">
-              <thead className="font-bold text-white" style={{ backgroundColor: "rgba(5,28,44,0.7)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                <tr>
-                  <th className="px-4 py-3 w-1/5">Category</th>
-                  {programNames.map((name) => (
-                    <th key={name} className="px-4 py-3 w-1/4">{name}</th>
-                  ))}
-                  <th className="px-4 py-3 w-1/5">Category Winner</th>
-                  <th className="px-4 py-3 w-1/10">Evidence</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y text-xs" style={{ divideColor: "rgba(255,255,255,0.06)" }}>
-                {result.analysis.matrix.map((item, idx) => {
-                  const repFields: Record<string, { label: string; fieldName: string }> = {
-                    "Program Basics": { label: "Program Type", fieldName: "program_type" },
-                    "Earn Mechanics": { label: "Base Earn Rate", fieldName: "base_earn_rate" },
-                    "Burn Mechanics": { label: "Redemption Options", fieldName: "redemption_options" },
-                    "Tier System": { label: "Tiers & Status", fieldName: "tier_names" },
-                    "Digital Experience": { label: "App Store Rating", fieldName: "app_store_rating" },
-                    "Member Sentiment": { label: "Overall Rating", fieldName: "overall_rating" },
-                    "Competitive Position": { label: "Key Differentiators", fieldName: "key_differentiators" },
-                    "Partnerships": { label: "Partner Names", fieldName: "partner_names" }
-                  };
-                  const repInfo = repFields[item.category] || { label: item.category, fieldName: "notable_unstructured_details" };
-                  const rowWinner = item.rankings?.[0] || "Tie";
-                  
-                  return (
-                    <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}>
-                      <td className="px-4 py-3 font-semibold text-white align-top w-1/5" style={{ fontFamily: "var(--kobie-font-heading)" }}>
-                        {item.category}
-                        <span className="block text-[8px] text-white/35 font-mono mt-0.5">{repInfo.label}</span>
-                      </td>
-                      
-                      {programNames.map((_, pIdx) => {
-                        const field = comparedData[pIdx]?.fields.find(f => f.field_name === repInfo.fieldName);
-                        const val = field?.field_value || "—";
+        {/* Timeline Stages Panel for BOTH Programs */}
+        <div className="space-y-4">
+          <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest block font-mono pl-1">
+            Program Pipelines
+          </span>
+          {runners.map((runner) => (
+            <div
+              key={runner.id}
+              className="rounded-[10px] p-1"
+              style={{
+                backgroundColor: "var(--kobie-ocean)",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <RunnerStagePanel
+                runnerId={runner.id}
+                runnerName={runner.name}
+                status={runner.status}
+                isDocked={true}
+                sidebarOnly={true}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Right Column (Document tabbed view, 2/3 width) */}
+      <div className="lg:col-span-8 space-y-6">
+        
+        {/* Document Sheet with white and grey bg */}
+        <div
+          className="rounded-[10px] p-6 text-left"
+          style={{
+            backgroundColor: "#f3f4f6",
+            border: "1px solid rgba(0,0,0,0.08)",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.02)"
+          }}
+        >
+          {/* Document Header */}
+          <div className="pb-6 mb-6 flex justify-between items-start flex-wrap gap-4 text-left" style={{ borderBottom: "1px solid rgba(5,28,44,0.08)" }}>
+            <div>
+              <h1 className="text-xl font-black tracking-tight" style={{ fontFamily: "var(--kobie-font-heading)", color: "#051c2c" }}>
+                Strategic Competitive Comparison
+              </h1>
+              <p className="text-xs font-mono mt-1" style={{ color: "rgba(5,28,44,0.5)" }}>
+                InfoVac Intelligence Report · {programNames.join(" vs. ")} · {new Date().toLocaleDateString("en-GB")} · {wordCount} words
+              </p>
+            </div>
+
+            {/* toolbar action buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePDFExport}
+                disabled={pdfLoading}
+                className="flex items-center gap-1.5 h-7 px-2.5 text-[10px] font-bold transition-all rounded-[4px] disabled:opacity-40"
+                style={{
+                  fontFamily: "var(--kobie-font-heading)",
+                  color: "rgba(9,37,56,0.6)",
+                  border: "1px solid rgba(9,37,56,0.15)",
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.color = "#092538";
+                  e.currentTarget.style.borderColor = "rgba(9,37,56,0.3)";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.color = "rgba(9,37,56,0.6)";
+                  e.currentTarget.style.borderColor = "rgba(9,37,56,0.15)";
+                }}
+              >
+                {pdfLoading ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  <FileText size={10} strokeWidth={1.5} />
+                )}
+                {pdfLoading ? "Generating…" : "PDF"}
+              </button>
+
+              <button
+                onClick={handleCSVExport}
+                disabled={csvLoading}
+                className="flex items-center gap-1.5 h-7 px-2.5 text-[10px] font-bold transition-all rounded-[4px] disabled:opacity-40"
+                style={{
+                  fontFamily: "var(--kobie-font-heading)",
+                  color: "rgba(9,37,56,0.6)",
+                  border: "1px solid rgba(9,37,56,0.15)",
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.color = "#092538";
+                  e.currentTarget.style.borderColor = "rgba(9,37,56,0.3)";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.color = "rgba(9,37,56,0.6)";
+                  e.currentTarget.style.borderColor = "rgba(9,37,56,0.15)";
+                }}
+              >
+                {csvLoading ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  <Table size={10} strokeWidth={1.5} />
+                )}
+                {csvLoading ? "Generating…" : "CSV"}
+              </button>
+
+              <button
+                onClick={handleCopyBrief}
+                className="flex items-center gap-1.5 h-7 px-3 text-xs font-bold transition-all rounded-[6px]"
+                style={{
+                  fontFamily: "var(--kobie-font-heading)",
+                  color: "rgba(9,37,56,0.6)",
+                  border: "1px solid rgba(9,37,56,0.15)",
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#092538")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(9,37,56,0.6)")}
+              >
+                {copied ? (
+                  <Check size={12} strokeWidth={1.5} style={{ color: "#10b981" }} />
+                ) : (
+                  <Copy size={12} strokeWidth={1.5} />
+                )}
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+
+          {/* Sleek Light Tab Bar */}
+          <div className="flex border-b border-[#051c2c]/10 mb-6 gap-2">
+            {[
+              { id: "brief", label: "Brief" },
+              { id: "matrix", label: "Matrix" },
+              { id: "parameters", label: "Parameters" },
+              { id: "highlights", label: "Highlights" },
+              { id: "opportunities", label: "Opportunities" }
+            ].map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className="px-4 py-2 text-xs font-bold transition-all duration-200 border-b-2"
+                  style={{
+                    fontFamily: "var(--kobie-font-heading)",
+                    color: isActive ? "#051c2c" : "rgba(5,28,44,0.4)",
+                    borderColor: isActive ? "#fd7f4f" : "transparent",
+                    background: "transparent",
+                    marginBottom: "-1px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Tab Contents */}
+          {activeTab === "brief" && (
+            <div className="animate-in fade-in duration-200">
+              {/* Executive Summary Top Winner Card */}
+              {(() => {
+                const tallies: Record<string, number> = {};
+                programNames.forEach(name => { tallies[name] = 0; });
+                result.analysis.matrix.forEach(item => {
+                  if (item.rankings && item.rankings[0]) {
+                    const rowWin = item.rankings[0];
+                    tallies[rowWin] = (tallies[rowWin] || 0) + 1;
+                  }
+                });
+                const sorted = Object.entries(tallies).sort((a, b) => b[1] - a[1]);
+                const winner = sorted[0]?.[0] || programNames[0] || "Tie / Equal";
+                const whyStrengths = result.analysis.matrix
+                  .filter(item => item.rankings?.[0] === winner)
+                  .map(item => item.category);
+                const why = whyStrengths.length > 0 ? whyStrengths.slice(0, 3) : ["Ecosystem Integration", "Redemption Utility", "Digital Mobile Experience"];
+
+                return (
+                  <div
+                    className="mb-6 p-4 rounded-[8px] grid grid-cols-1 md:grid-cols-12 gap-4 text-left"
+                    style={{
+                      background: "linear-gradient(135deg, rgba(253,127,79,0.08) 0%, rgba(5,28,44,0.02) 100%)",
+                      borderColor: "rgba(253,127,79,0.22)",
+                      borderWidth: "1px",
+                      borderStyle: "solid"
+                    }}
+                  >
+                    <div className="md:col-span-4 space-y-1">
+                      <span className="text-[9px] uppercase tracking-widest text-[#fd7f4f] font-bold block font-mono">Comparative Winner</span>
+                      <div className="text-base font-black" style={{ color: "#051c2c" }}>{winner}</div>
+                      <div className="text-[9px] font-mono" style={{ color: "rgba(5,28,44,0.4)" }}>Confidence: 91%</div>
+                    </div>
+                    <div className="md:col-span-8 space-y-1.5">
+                      <span className="text-[9px] uppercase tracking-widest font-bold block font-mono" style={{ color: "rgba(5,28,44,0.5)" }}>Redemption & Integration Advantages</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {why.map((strength, sIdx) => (
+                          <div key={sIdx} className="p-2 rounded bg-white border border-[#051c2c]/5 text-[9px] font-bold flex items-center gap-1.5" style={{ color: "#051c2c" }}>
+                            <span className="text-[#fd7f4f]">✓</span> {strength}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Executive Summary */}
+              <div className="mb-6">
+                <h2 className="text-xs font-bold mb-3 tracking-wide uppercase" style={{ color: "#051c2c", fontFamily: "var(--kobie-font-heading)" }}>
+                  Executive Summary
+                </h2>
+                <div className="leading-[1.75]">
+                  {renderComparisonParagraphs(result.analysis.executive_summary)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "matrix" && (
+            <div className="animate-in fade-in duration-200">
+              {/* Market Matrix Table */}
+              <div className="mb-6">
+                <h2 className="text-xs font-bold mb-3 tracking-wide uppercase" style={{ color: "#051c2c", fontFamily: "var(--kobie-font-heading)" }}>
+                  Category Rankings & Matrix
+                </h2>
+                <div className="overflow-x-auto rounded-[8px] overflow-hidden border border-[#051c2c]/10">
+                  <table className="min-w-full text-left text-xs">
+                    <thead className="font-bold text-white" style={{ backgroundColor: "#051c2c", borderBottom: "1px solid rgba(5,28,44,0.1)" }}>
+                      <tr>
+                        <th className="px-4 py-3 w-1/5">Category</th>
+                        {programNames.map((name) => (
+                          <th key={name} className="px-4 py-3 w-1/4">{name}</th>
+                        ))}
+                        <th className="px-4 py-3 w-1/5">Category Winner</th>
+                        <th className="px-4 py-3 w-1/10">Evidence</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-xs divide-[#051c2c]/5">
+                      {result.analysis.matrix.map((item, idx) => {
+                        const repFields: Record<string, { label: string; fieldName: string }> = {
+                          "Program Basics": { label: "Program Type", fieldName: "program_type" },
+                          "Earn Mechanics": { label: "Base Earn Rate", fieldName: "base_earn_rate" },
+                          "Burn Mechanics": { label: "Redemption Options", fieldName: "redemption_options" },
+                          "Tier System": { label: "Tiers & Status", fieldName: "tier_names" },
+                          "Digital Experience": { label: "App Store Rating", fieldName: "app_store_rating" },
+                          "Member Sentiment": { label: "Overall Rating", fieldName: "overall_rating" },
+                          "Competitive Position": { label: "Key Differentiators", fieldName: "key_differentiators" },
+                          "Partnerships": { label: "Partner Names", fieldName: "partner_names" }
+                        };
+                        const repInfo = repFields[item.category] || { label: item.category, fieldName: "notable_unstructured_details" };
+                        const rowWinner = item.rankings?.[0] || "Tie";
+                        
                         return (
-                          <td key={pIdx} className="px-4 py-3 align-top leading-relaxed text-white/70 w-1/4">
-                            {val}
-                          </td>
+                          <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f9fafb" }}>
+                            <td className="px-4 py-3 font-semibold align-top w-1/5" style={{ fontFamily: "var(--kobie-font-heading)", color: "#051c2c" }}>
+                              {item.category}
+                              <span className="block text-[8px] font-mono mt-0.5" style={{ color: "rgba(5,28,44,0.4)" }}>{repInfo.label}</span>
+                            </td>
+                            
+                            {programNames.map((_, pIdx) => {
+                              const field = comparedData[pIdx]?.fields.find(f => f.field_name === repInfo.fieldName);
+                              const val = field?.field_value || "—";
+                              return (
+                                <td key={pIdx} className="px-4 py-3 align-top leading-relaxed w-1/4" style={{ color: "rgba(5,28,44,0.7)" }}>
+                                  {val}
+                                </td>
+                              );
+                            })}
+
+                            <td className="px-4 py-3 align-top w-1/5">
+                              <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded" style={{
+                                backgroundColor: rowWinner !== "Tie" ? "rgba(253,127,79,0.12)" : "rgba(5,28,44,0.05)",
+                                color: rowWinner !== "Tie" ? "#fd7f4f" : "rgba(5,28,44,0.5)",
+                                border: rowWinner !== "Tie" ? "1px solid rgba(253,127,79,0.25)" : "1px solid rgba(5,28,44,0.08)"
+                              }}>
+                                {rowWinner === "Tie" ? "Tie" : `🏆 ${rowWinner.split(' ')[0]}`}
+                              </span>
+                            </td>
+
+                            <td className="px-4 py-3 align-top w-1/10">
+                              {(() => {
+                                const winnerIdx = programNames.indexOf(rowWinner);
+                                if (winnerIdx !== -1) {
+                                  const field = comparedData[winnerIdx]?.fields.find(f => f.field_name === repInfo.fieldName);
+                                  const num = field?.source_url ? urlMap.get(field.source_url) : null;
+                                  if (num) {
+                                    return (
+                                      <CitationBadge
+                                        num={num}
+                                        url={field?.source_url}
+                                        onClick={() => field?.source_url && setDrawerUrl(field.source_url)}
+                                      />
+                                    );
+                                  }
+                                }
+                                return <span className="text-black/20">—</span>;
+                              })()}
+                            </td>
+                          </tr>
                         );
                       })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
 
-                      <td className="px-4 py-3 align-top w-1/5">
-                        <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded" style={{
-                          backgroundColor: rowWinner !== "Tie" ? "rgba(253,127,79,0.15)" : "rgba(255,255,255,0.05)",
-                          color: rowWinner !== "Tie" ? "#fd7f4f" : "rgba(255,255,255,0.4)",
-                          border: rowWinner !== "Tie" ? "1px solid rgba(253,127,79,0.3)" : "1px solid rgba(255,255,255,0.08)"
-                        }}>
-                          {rowWinner === "Tie" ? "Tie" : `🏆 ${rowWinner.split(' ')[0]}`}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 align-top w-1/10">
-                        {(() => {
-                          const winnerIdx = programNames.indexOf(rowWinner);
-                          if (winnerIdx !== -1) {
-                            const field = comparedData[winnerIdx]?.fields.find(f => f.field_name === repInfo.fieldName);
+          {activeTab === "parameters" && (
+            <div className="animate-in fade-in duration-200">
+              {/* Side-by-Side Parameters Table */}
+              <div className="mb-6">
+                <h2 className="text-xs font-bold mb-3 tracking-wide uppercase" style={{ color: "#051c2c", fontFamily: "var(--kobie-font-heading)" }}>
+                  Side-by-Side Parameters
+                </h2>
+                <div className="overflow-x-auto rounded-[8px] overflow-hidden border border-[#051c2c]/10">
+                  <table className="min-w-full text-left text-xs">
+                    <thead className="font-bold text-white" style={{ backgroundColor: "#051c2c", borderBottom: "1px solid rgba(5,28,44,0.1)" }}>
+                      <tr>
+                        <th className="px-4 py-3 w-1/4">Loyalty Parameter</th>
+                        {programNames.map((name) => (
+                          <th key={name} className="px-4 py-3 w-3/8">{name}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-xs divide-[#051c2c]/5">
+                      {keyFieldsList.map((fItem, idx) => (
+                        <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f9fafb" }}>
+                          <td className="px-4 py-3 font-semibold align-top w-1/4" style={{ fontFamily: "var(--kobie-font-heading)", color: "#051c2c" }}>{fItem.label}</td>
+                          {programNames.map((_, pIdx) => {
+                            const field = comparedData[pIdx]?.fields.find((f) => f.field_name === fItem.name);
+                            const val = field?.field_value || "—";
                             const num = field?.source_url ? urlMap.get(field.source_url) : null;
-                            if (num) {
-                              return (
-                                <CitationBadge
-                                  num={num}
-                                  url={field?.source_url}
-                                  onClick={() => field?.source_url && setDrawerUrl(field.source_url)}
-                                />
-                              );
-                            }
-                          }
-                          return <span className="text-white/20">—</span>;
-                        })()}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                            return (
+                              <td key={pIdx} className="px-4 py-3 align-top whitespace-pre-line leading-[1.75] w-3/8" style={{ color: "rgba(5,28,44,0.75)" }}>
+                                {val}
+                                {num && (
+                                  <CitationBadge
+                                    num={num}
+                                    url={field?.source_url}
+                                    onClick={() => field?.source_url && setDrawerUrl(field.source_url)}
+                                  />
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
 
-        {/* Side-by-Side Parameters Table */}
-        <div className="mb-8">
-          <h2 className="text-sm font-bold mb-3 tracking-wide uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: "var(--kobie-font-heading)" }}>
-            Side-by-Side Parameters
-          </h2>
-          <div className="overflow-x-auto rounded-[8px] overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
-            <table className="min-w-full text-left text-xs">
-              <thead className="font-bold text-white" style={{ backgroundColor: "rgba(5,28,44,0.7)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                <tr>
-                  <th className="px-4 py-3 w-1/4">Loyalty Parameter</th>
-                  {programNames.map((name) => (
-                    <th key={name} className="px-4 py-3 w-3/8">{name}</th>
+          {activeTab === "highlights" && (
+            <div className="animate-in fade-in duration-200">
+              {/* Program Highlights - Stacked Vertically */}
+              <div className="mb-6">
+                <h2 className="text-xs font-bold mb-4 tracking-wide uppercase" style={{ color: "#051c2c", fontFamily: "var(--kobie-font-heading)" }}>
+                  Program Highlights
+                </h2>
+                <div className="space-y-4">
+                  {programNames.map((pName, pIdx) => (
+                    <div key={pIdx} className="py-4 last:border-0 border-b border-[#051c2c]/5">
+                      <h3 className="text-xs font-bold mb-2.5 tracking-wide uppercase" style={{ color: "#fd7f4f", fontFamily: "var(--kobie-font-heading)" }}>
+                        {pName} Key Attributes
+                      </h3>
+                      <ul className="space-y-2 list-disc pl-5 text-xs font-semibold" style={{ color: "rgba(5,28,44,0.7)" }}>
+                        {comparedData[pIdx]?.fields
+                          .filter((f) => f.gate_passed && !f.is_null && f.field_value && f.category !== "program_basics")
+                          .slice(0, 5)
+                          .map((f, fi) => {
+                            const num = f.source_url ? urlMap.get(f.source_url) : null;
+                            return (
+                              <li key={fi} className="leading-relaxed">
+                                <span className="font-bold text-[#051c2c]">{f.field_name.replace(/_/g, " ")}: </span>
+                                {f.field_value}
+                                {num && (
+                                  <CitationBadge
+                                    num={num}
+                                    url={f.source_url}
+                                    onClick={() => f.source_url && setDrawerUrl(f.source_url)}
+                                  />
+                                )}
+                              </li>
+                            );
+                          })}
+                      </ul>
+                    </div>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y text-xs" style={{ divideColor: "rgba(255,255,255,0.06)" }}>
-                {keyFieldsList.map((fItem, idx) => (
-                  <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}>
-                    <td className="px-4 py-3 font-semibold text-white align-top w-1/4" style={{ fontFamily: "var(--kobie-font-heading)" }}>{fItem.label}</td>
-                    {programNames.map((_, pIdx) => {
-                      const field = comparedData[pIdx]?.fields.find((f) => f.field_name === fItem.name);
-                      const val = field?.field_value || "—";
-                      const num = field?.source_url ? urlMap.get(field.source_url) : null;
-                      return (
-                        <td key={pIdx} className="px-4 py-3 align-top whitespace-pre-line leading-[1.75] w-3/8" style={{ color: "rgba(255,255,255,0.7)" }}>
-                          {val}
-                          {num && (
-                            <CitationBadge
-                              num={num}
-                              url={field?.source_url}
-                              onClick={() => field?.source_url && setDrawerUrl(field.source_url)}
-                            />
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Program Highlights - Stacked Vertically */}
-        <div className="mb-8 pt-6" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <h2 className="text-sm font-bold mb-4 tracking-wide uppercase" style={{ color: "rgba(255,255,255,0.85)", fontFamily: "var(--kobie-font-heading)" }}>
-            Program Highlights
-          </h2>
-          <div className="space-y-4">
-            {programNames.map((pName, pIdx) => (
-              <div key={pIdx} className="py-4 last:border-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                <h3 className="text-xs font-bold mb-2.5 tracking-wide uppercase" style={{ color: "#fd7f4f", fontFamily: "var(--kobie-font-heading)" }}>
-                  {pName} Key Attributes
-                </h3>
-                <ul className="space-y-2 list-disc pl-5 text-xs" style={{ color: "rgba(255,255,255,0.65)" }}>
-                  {comparedData[pIdx]?.fields
-                    .filter((f) => f.gate_passed && !f.is_null && f.field_value && f.category !== "program_basics")
-                    .slice(0, 5)
-                    .map((f, fi) => {
-                      const num = f.source_url ? urlMap.get(f.source_url) : null;
-                      return (
-                        <li key={fi} className="leading-[1.75]">
-                          <span className="font-semibold capitalize" style={{ color: "rgba(255,255,255,0.85)" }}>{f.field_name.replace(/_/g, " ")}</span>: {f.field_value}
-                          {num && (
-                            <CitationBadge
-                              num={num}
-                              url={f.source_url}
-                              onClick={() => f.source_url && setDrawerUrl(f.source_url)}
-                            />
-                          )}
-                        </li>
-                      );
-                    })}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Strategic Recommendations */}
-        <div className="mb-10 p-6 rounded-[10px]" style={{ backgroundColor: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.08)" }}>
-          <h2 className="text-sm font-bold mb-4 tracking-wide uppercase flex items-center gap-1.5" style={{ color: "var(--kobie-white)", fontFamily: "var(--kobie-font-heading)" }}>
-            <Sparkles size={14} className="animate-pulse" style={{ color: "#fd7f4f" }} />
-            Strategic Opportunities
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-            <div className="md:col-span-7 space-y-4">
-              <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest block font-mono">Dynamic LLM Advisory Notes</span>
-              <div className="leading-[1.75]">
-                {renderComparisonParagraphs(result.analysis.strategic_recommendations)}
-              </div>
-            </div>
-            <div className="md:col-span-5 space-y-3.5 pl-0 md:pl-6 border-l border-white/0 md:border-l-white/5">
-              <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest block font-mono">Segment Positioning Playbook</span>
-              <div className="space-y-3 text-xs">
-                <div className="p-3 rounded bg-[#fd7f4f]/5 border border-[#fd7f4f]/10">
-                  <span className="text-[9px] font-bold uppercase tracking-wide text-[#fd7f4f] block font-mono">QSR Client Strategy</span>
-                  <p className="text-[11px] text-white/70 leading-normal mt-1">Leverage high-frequency bonus events, instant burn incentives, and deep app integration to capture daily habit spends.</p>
-                </div>
-                <div className="p-3 rounded bg-blue-500/5 border border-blue-500/10">
-                  <span className="text-[9px] font-bold uppercase tracking-wide text-blue-400 block font-mono">Retail Client Strategy</span>
-                  <p className="text-[11px] text-white/70 leading-normal mt-1">Deploy co-branded partnerships, tiered soft benefits (free shipping), and high-ticket reward redemptions for customer lifetime value.</p>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          )}
 
-        {/* References Section */}
-        {references.length > 0 && (
-          <div id="references-section" className="mt-10 pt-6" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-            <span className="kobie-overline">References</span>
-            <ol className="space-y-5 list-none">
-              {references.map((ref) => {
-                const displayDate = ref.accessDate ?? "—";
-                return (
-                  <li key={ref.url} id={`ref-${ref.num}`} className="flex items-start gap-3">
-                    <span className="text-[11px] font-bold shrink-0 mt-0.5 w-6 text-right" style={{ color: "#fd7f4f" }}>
-                      [{ref.num}]
-                    </span>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-start gap-1.5">
-                        <span className="text-[11px] shrink-0 font-semibold w-28" style={{ color: "rgba(255,255,255,0.35)" }}>Source</span>
-                        <button
-                          onClick={() => setDrawerUrl(ref.url)}
-                          className="text-[11px] hover:underline text-left break-all transition-colors flex items-center gap-1"
-                          style={{ color: "#fd7f4f" }}
-                          title="View evidence"
-                        >
-                          {ref.url}
-                          <ExternalLink size={10} className="shrink-0 opacity-55" />
-                        </button>
+          {activeTab === "opportunities" && (
+            <div className="animate-in fade-in duration-200 space-y-6">
+              {/* Strategic Recommendations (Dynamic) */}
+              <div>
+                <h2 className="text-xs font-bold mb-3 tracking-wide uppercase" style={{ color: "#051c2c", fontFamily: "var(--kobie-font-heading)" }}>
+                  Strategic Recommendations
+                </h2>
+                <div className="leading-[1.75]">
+                  {renderComparisonParagraphs(result.analysis.strategic_recommendations)}
+                </div>
+              </div>
+
+              {/* Opportunities Panel (Static Playbook) */}
+              <div className="pt-6 border-t border-[#051c2c]/10">
+                <h2 className="text-xs font-bold mb-3 tracking-wide uppercase" style={{ color: "#051c2c", fontFamily: "var(--kobie-font-heading)" }}>
+                  Segment Positioning Playbook
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left mt-3">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-widest block font-mono mb-2" style={{ color: "rgba(5,28,44,0.4)" }}>Segment Strategy Cards</span>
+                    <div className="space-y-3 text-xs">
+                      <div className="p-3 rounded bg-white border border-[#fd7f4f]/20 shadow-sm">
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-[#fd7f4f] block font-mono">QSR Client Strategy</span>
+                        <p className="text-[11px] leading-normal mt-1" style={{ color: "rgba(5,28,44,0.7)" }}>Leverage high-frequency bonus events, instant burn incentives, and deep app integration to capture daily habit spends.</p>
                       </div>
-                      <div className="flex items-start gap-1.5">
-                        <span className="text-[11px] shrink-0 font-semibold w-28" style={{ color: "rgba(255,255,255,0.35)" }}>Evidence Quote</span>
-                        <span className="text-[11px] italic leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
-                          {ref.snippet ? `"${ref.snippet}"` : "—"}
-                        </span>
-                      </div>
-                      <div className="flex items-start gap-1.5">
-                        <span className="text-[11px] shrink-0 font-semibold w-28" style={{ color: "rgba(255,255,255,0.35)" }}>Access Date</span>
-                        <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>{displayDate}</span>
+                      <div className="p-3 rounded bg-white border border-blue-500/20 shadow-sm">
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-blue-500 block font-mono">Retail Client Strategy</span>
+                        <p className="text-[11px] leading-normal mt-1" style={{ color: "rgba(5,28,44,0.7)" }}>Deploy co-branded partnerships, tiered soft benefits (free shipping), and high-ticket reward redemptions for customer lifetime value.</p>
                       </div>
                     </div>
-                  </li>
-                );
-              })}
-            </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* References Section */}
+          {references.length > 0 && (
+            <div id="references-section" className="mt-8 pt-6 border-t border-[#051c2c]/10">
+              <span className="kobie-overline" style={{ color: "#051c2c" }}>References</span>
+              <ol className="space-y-4 list-none text-left">
+                {references.map((ref) => {
+                  const displayDate = ref.accessDate ?? "—";
+                  return (
+                    <li key={ref.url} id={`ref-${ref.num}`} className="flex items-start gap-3">
+                      <span className="text-[11px] font-bold shrink-0 mt-0.5 w-6 text-right" style={{ color: "#fd7f4f" }}>
+                        [{ref.num}]
+                      </span>
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-[11px] shrink-0 font-semibold w-28 text-left" style={{ color: "rgba(5,28,44,0.4)" }}>Source</span>
+                          <button
+                            onClick={() => setDrawerUrl(ref.url)}
+                            className="text-[11px] hover:underline text-left break-all transition-colors flex items-center gap-1"
+                            style={{ color: "#2563eb" }}
+                            title="View evidence"
+                          >
+                            {ref.url}
+                            <ExternalLink size={10} className="shrink-0 opacity-55" />
+                          </button>
+                        </div>
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-[11px] shrink-0 font-semibold w-28 text-left" style={{ color: "rgba(5,28,44,0.4)" }}>Evidence Quote</span>
+                          <span className="text-[11px] italic leading-relaxed" style={{ color: "rgba(5,28,44,0.7)" }}>
+                            {ref.snippet ? `"${ref.snippet}"` : "—"}
+                          </span>
+                        </div>
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-[11px] shrink-0 font-semibold w-28 text-left" style={{ color: "rgba(5,28,44,0.4)" }}>Access Date</span>
+                          <span className="text-[11px]" style={{ color: "rgba(5,28,44,0.6)" }}>{displayDate}</span>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          )}
+
+          {/* Watermark at the bottom of the document */}
+          <div className="relative flex py-6 items-center mt-6">
+            <div className="flex-grow" style={{ borderTop: "1px solid rgba(5,28,44,0.08)" }}></div>
+            <span className="flex-shrink mx-4 text-[9px] font-mono uppercase tracking-wider" style={{ color: "rgba(5,28,44,0.25)" }}>
+              {WATERMARK_TEXT}
+            </span>
+            <div className="flex-grow" style={{ borderTop: "1px solid rgba(5,28,44,0.08)" }}></div>
           </div>
-        )}
-        {/* Center watermark with lines to left and right */}
-        <div className="relative flex py-6 items-center mt-8">
-          <div className="flex-grow" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}></div>
-          <span className="flex-shrink mx-4 text-[9px] font-mono uppercase tracking-wider" style={{ color: "rgba(255,255,255,0.2)" }}>
-            {WATERMARK_TEXT}
-          </span>
-          <div className="flex-grow" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}></div>
         </div>
       </div>
 
@@ -513,6 +805,14 @@ function ComparisonResults({ result }: { result: Comparison }) {
 }
 
 // ── Multi-Flow Workspace ─────────────────────────────────────────────────────
+interface Runner {
+  id: string;
+  name: string;
+  status: string;
+  progress: number;
+  hasStarted?: boolean;
+}
+
 interface MultiFlowWorkspaceProps {
   runners: Runner[];
   expandedRunnerId: string | null;
@@ -684,7 +984,13 @@ export function MultiFlowWorkspace({
       )}
 
       {/* Comparison results */}
-      {comparisonResult && <ComparisonResults result={comparisonResult} />}
+      {comparisonResult && (
+        <ComparisonResults
+          result={comparisonResult}
+          runners={runners}
+          onReset={onClearWorkspace}
+        />
+      )}
     </div>
   );
 }

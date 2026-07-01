@@ -57,8 +57,10 @@ function exportCSV(fields: ExtractedField[], programName: string) {
   a.download = `${programName.replace(/\s+/g, "_")}_fields.csv`;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 20000);
 }
 
 // ── Shared styles used by both Single and Compare PDF layouts ──
@@ -80,13 +82,14 @@ const createSharedStyles = (StyleSheet: any) =>
     citationLink: { fontSize: 8.5, color: "#FD7F4F", fontFamily: "Helvetica-Bold", textDecoration: "none" },
     
     // Table layout styles (Comparison specific)
-    table: { marginTop: 10, marginBottom: 15, border: "1px solid #FD7F4F", borderRadius: 4, overflow: "hidden" },
-    tableHeaderRow: { flexDirection: "row", backgroundColor: "#051C2C", padding: 6, borderBottom: "1px solid #FD7F4F" },
-    tableRow: { flexDirection: "row", borderBottom: "1px solid #F6E2D9", minHeight: 28, backgroundColor: "#FFFFFF" },
-    tableRowAlt: { flexDirection: "row", borderBottom: "1px solid #F6E2D9", minHeight: 28, backgroundColor: "#FFF9F6" },
-    tableHeaderCell: { color: "#FFFFFF", fontSize: 8.5, fontFamily: "Helvetica-Bold", padding: 4 },
-    tableCellCategory: { fontSize: 8.5, fontFamily: "Helvetica-Bold", color: "#051C2C", padding: 5, borderRight: "1px solid #F6E2D9", backgroundColor: "#FFF2EC" },
-    tableCellContent: { fontSize: 8, color: "#051C2C", padding: 5, borderRight: "1px solid #F6E2D9" },
+    table: { marginTop: 10, marginBottom: 15, borderBottom: "1px solid #FD7F4F", borderRadius: 4, overflow: "hidden" },
+    tableHeaderRow: { flexDirection: "row", backgroundColor: "#051C2C", borderTop: "1px solid #FD7F4F", borderLeft: "1px solid #FD7F4F", borderRight: "1px solid #FD7F4F", borderBottom: "1px solid #FD7F4F" },
+    tableRow: { flexDirection: "row", borderLeft: "1px solid #FD7F4F", borderRight: "1px solid #FD7F4F", borderBottom: "1px solid #F6E2D9", minHeight: 28, backgroundColor: "#FFFFFF" },
+    tableRowAlt: { flexDirection: "row", borderLeft: "1px solid #FD7F4F", borderRight: "1px solid #FD7F4F", borderBottom: "1px solid #F6E2D9", minHeight: 28, backgroundColor: "#FFF9F6" },
+    tableHeaderCellContainer: { padding: 6, justifyContent: "center" },
+    tableHeaderCell: { color: "#FFFFFF", fontSize: 8.5, fontFamily: "Helvetica-Bold" },
+    tableCellCategory: { padding: 6, borderRight: "1px solid #F6E2D9", backgroundColor: "#FFF2EC", justifyContent: "center" },
+    tableCellContent: { padding: 6, borderRight: "1px solid #F6E2D9" },
     rankBadge: { fontSize: 7.5, fontWeight: "bold", color: "#666666", marginBottom: 3 },
 
     // Highlights column styles (Comparison specific)
@@ -128,13 +131,13 @@ export async function exportPDF(narrative: Narrative, fields: ExtractedField[], 
 
       if (h2Match) {
         return (
-          <Text key={`h2-${i}`} style={styles.h2}>
+          <Text key={`h2-${i}`} minPresenceAhead={30} style={styles.h2}>
             {h2Match[1]}
           </Text>
         );
       } else if (h3Match) {
         return (
-          <Text key={`h3-${i}`} style={styles.h3}>
+          <Text key={`h3-${i}`} minPresenceAhead={25} style={styles.h3}>
             {h3Match[1]}
           </Text>
         );
@@ -162,7 +165,7 @@ export async function exportPDF(narrative: Narrative, fields: ExtractedField[], 
       <View style={styles.headerTopRow}>
         <Text style={styles.title}>{programName}</Text>
         <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>Kobie</Text>
+          <Text style={styles.logoText}>InfoVac</Text>
           <Svg width={9} height={9} viewBox="0 0 24 24" style={{ marginLeft: 2 }}>
             <Path
               d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
@@ -172,7 +175,7 @@ export async function exportPDF(narrative: Narrative, fields: ExtractedField[], 
         </View>
       </View>
       <Text style={styles.subtitle}>
-        Kobie Competitive Intelligence · {new Date().toLocaleDateString("en-GB")} ·{" "}
+        InfoVac Competitive Intelligence · {new Date().toLocaleDateString("en-GB")} ·{" "}
         {calculateWordCount(narrative.narrative)} words
       </Text>
     </View>
@@ -189,7 +192,7 @@ export async function exportPDF(narrative: Narrative, fields: ExtractedField[], 
   );
 
   const PDFDoc = () => (
-    <Document title={`${programName} — Kobie Intelligence Brief`}>
+    <Document title={`${programName} — InfoVac Intelligence Brief`}>
       <Page size="A4" style={styles.page}>
         <PageHeader />
         {buildBodyNodes(narrative.narrative).filter(Boolean)}
@@ -200,7 +203,7 @@ export async function exportPDF(narrative: Narrative, fields: ExtractedField[], 
         <Page size="A4" style={styles.page}>
           <PageHeader />
           <View style={styles.refSection}>
-            <Text style={styles.refHeading}>References</Text>
+            <Text minPresenceAhead={30} style={styles.refHeading}>References</Text>
             {references.map((ref) => {
               const accessDate = ref.accessDate ?? "—";
               const snippet = ref.snippet
@@ -209,7 +212,7 @@ export async function exportPDF(narrative: Narrative, fields: ExtractedField[], 
               const displayUrl = ref.url.length > 65 ? ref.url.slice(0, 65) + "..." : ref.url;
 
               return (
-                <View key={ref.url} style={styles.refItem} id={`ref-${ref.num}`}>
+                <View key={ref.url} wrap={true} style={styles.refItem} id={`ref-${ref.num}`}>
                   <Link src={ref.url} style={[styles.refNum, { textDecoration: "none" }]}>
                     [{ref.num}]
                   </Link>
@@ -244,8 +247,10 @@ export async function exportPDF(narrative: Narrative, fields: ExtractedField[], 
   a.download = `${programName.replace(/\s+/g, "_")}_brief.pdf`;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 20000);
 }
 
 // ── Export helper for Multi-Program Comparisons (Consolidated) ──
@@ -292,6 +297,7 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
 
   // Citation parser helper
   function buildTextWithCitations(text: string) {
+    if (!text) return [];
     const cleanText = text.replace(/\[[a-zA-Z0-9_]+\]/g, "").replace(/\s{2,}/g, " ");
     const segments = splitNarrativeSegments(cleanText, urlMap);
     return segments.map((seg, idx) =>
@@ -303,6 +309,22 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
         </Link>
       )
     );
+  }
+
+  function buildParagraphsWithCitations(text: string) {
+    if (!text) return [];
+    const paragraphs = text.split(/\n+/);
+    return paragraphs.map((para, idx) => {
+      const trimmed = para.trim();
+      if (!trimmed) return null;
+      return (
+        <View key={idx} wrap={false} style={styles.bodyWrap}>
+          <Text style={styles.body}>
+            {buildTextWithCitations(trimmed)}
+          </Text>
+        </View>
+      );
+    });
   }
 
   const keyFieldsList = [
@@ -321,7 +343,7 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
       <View style={styles.headerTopRow}>
         <Text style={styles.title}>Strategic Competitive Comparison</Text>
         <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>Kobie</Text>
+          <Text style={styles.logoText}>InfoVac</Text>
           <Svg width={9} height={9} viewBox="0 0 24 24" style={{ marginLeft: 2 }}>
             <Path
               d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
@@ -331,7 +353,7 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
         </View>
       </View>
       <Text style={styles.subtitle}>
-        Kobie Competitive Intelligence Report · {programNames.join(" vs ")} · {new Date().toLocaleDateString("en-GB")} · {wordCount} words
+        InfoVac Competitive Intelligence Report · {programNames.join(" vs ")} · {new Date().toLocaleDateString("en-GB")} · {wordCount} words
       </Text>
     </View>
   );
@@ -348,32 +370,35 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
 
   const PDFDoc = () => (
     <Document title={`Competitive Matrix — ${programNames.join(" vs ")}`}>
+      {/* Main Flow: Executive Summary, Category Rankings & Matrix, Parameters, Highlights, Recommendations */}
       <Page size="A4" style={styles.page}>
         <PageHeader />
 
         {/* Executive Summary */}
-        <Text style={styles.sectionHeading}>Executive Summary</Text>
-        <View style={styles.bodyWrap}>
-          <Text style={styles.body}>
-            {buildTextWithCitations(analysis.executive_summary)}
-          </Text>
-        </View>
+        <Text minPresenceAhead={30} style={styles.sectionHeading}>Executive Summary</Text>
+        {buildParagraphsWithCitations(analysis.executive_summary)}
 
-        {/* Comparison Table */}
-        <Text style={styles.sectionHeading}>Market Matrix Table</Text>
+        {/* Category Rankings & Matrix */}
+        <Text minPresenceAhead={30} style={styles.sectionHeading}>Category Rankings & Matrix</Text>
         <View style={styles.table}>
-          <View style={styles.tableHeaderRow}>
-            <Text style={[styles.tableHeaderCell, { width: "24%" }]}>Category</Text>
-            <Text style={[styles.tableHeaderCell, { width: "76%" }]}>Comparative Analysis</Text>
+          <View fixed style={styles.tableHeaderRow}>
+            <View style={[styles.tableHeaderCellContainer, { width: "24%", borderRightWidth: 1, borderRightColor: "#FD7F4F" }]}>
+              <Text style={styles.tableHeaderCell}>Category</Text>
+            </View>
+            <View style={[styles.tableHeaderCellContainer, { width: "76%" }]}>
+              <Text style={styles.tableHeaderCell}>Comparative Analysis</Text>
+            </View>
           </View>
 
           {analysis.matrix.map((item: any, i: number) => {
             const isAlt = i % 2 !== 0;
             return (
               <View key={i} wrap={false} style={isAlt ? styles.tableRowAlt : styles.tableRow}>
-                <Text style={[styles.tableCellCategory, { width: "24%" }]}>{item.category}</Text>
+                <View style={[styles.tableCellCategory, { width: "24%" }]}>
+                  <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#051C2C" }}>{item.category}</Text>
+                </View>
                 <View style={[styles.tableCellContent, { width: "76%", borderRightWidth: 0 }]}>
-                  <Text style={styles.body}>
+                  <Text style={{ fontSize: 8, lineHeight: 1.4, color: "#051C2C" }}>
                     {buildTextWithCitations(item.rationale)}
                   </Text>
                 </View>
@@ -383,27 +408,37 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
         </View>
 
         {/* Detailed Parameters Table */}
-        <Text style={styles.sectionHeading}>Side-by-Side Parameters</Text>
+        <Text minPresenceAhead={30} style={styles.sectionHeading}>Side-by-Side Parameters</Text>
         <View style={styles.table}>
-          <View style={styles.tableHeaderRow}>
-            <Text style={[styles.tableHeaderCell, { width: categoryWidth }]}>Loyalty Parameter</Text>
-            {programNames.map((name, i) => (
-              <Text key={i} style={[styles.tableHeaderCell, { width: programColWidth }]}>{name}</Text>
-            ))}
+          <View fixed style={styles.tableHeaderRow}>
+            <View style={[styles.tableHeaderCellContainer, { width: categoryWidth, borderRightWidth: 1, borderRightColor: "#FD7F4F" }]}>
+              <Text style={styles.tableHeaderCell}>Loyalty Parameter</Text>
+            </View>
+            {programNames.map((name, i) => {
+              const isLast = i === programNames.length - 1;
+              return (
+                <View key={i} style={[styles.tableHeaderCellContainer, { width: programColWidth, borderRightWidth: isLast ? 0 : 1, borderRightColor: "#FD7F4F" }]}>
+                  <Text style={styles.tableHeaderCell}>{name}</Text>
+                </View>
+              );
+            })}
           </View>
 
           {keyFieldsList.map((fItem, i) => {
             const isAlt = i % 2 !== 0;
             return (
               <View key={i} wrap={false} style={isAlt ? styles.tableRowAlt : styles.tableRow}>
-                <Text style={[styles.tableCellCategory, { width: categoryWidth }]}>{fItem.label}</Text>
+                <View style={[styles.tableCellCategory, { width: categoryWidth }]}>
+                  <Text style={{ fontSize: 8, fontFamily: "Helvetica-Bold", color: "#051C2C" }}>{fItem.label}</Text>
+                </View>
                 {programNames.map((_, pIdx) => {
-                  const field = programData[pIdx]?.fields.find((f) => f.field_name === fItem.name);
+                  const field = programData[pIdx]?.fields.find((f: any) => f.field_name === fItem.name);
                   const val = field?.field_value || "—";
                   const num = field?.source_url ? urlMap.get(field.source_url) : null;
+                  const isLast = pIdx === programNames.length - 1;
                   return (
-                    <View key={pIdx} style={[styles.tableCellContent, { width: programColWidth }]}>
-                      <Text style={styles.body}>
+                    <View key={pIdx} style={[styles.tableCellContent, { width: programColWidth, borderRightWidth: isLast ? 0 : 1 }]}>
+                      <Text style={{ fontSize: 8, lineHeight: 1.4, color: "#051C2C" }}>
                         {val}
                         {num && (
                           <Link src={`#ref-${num}`} style={styles.citationLink}>
@@ -420,10 +455,10 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
         </View>
 
         {/* Individual Highlights */}
-        <Text style={styles.sectionHeading}>Program Highlights</Text>
+        <Text minPresenceAhead={30} style={styles.sectionHeading}>Program Highlights</Text>
         <View style={styles.highlightsContainer}>
           {programNames.map((pName, pIdx) => (
-            <View key={pIdx} wrap={false} style={styles.highlightCol}>
+            <View key={pIdx} wrap={true} style={styles.highlightCol}>
               <Text style={styles.highlightColTitle}>{pName} Highlights</Text>
               {programData[pIdx]?.fields
                 .filter((f: any) => f.gate_passed && !f.is_null && f.field_value && f.category !== "program_basics")
@@ -445,14 +480,36 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
           ))}
         </View>
 
+        {/* Strategic Recommendations / Opportunities */}
+        <Text minPresenceAhead={30} style={styles.sectionHeading}>Strategic Recommendations</Text>
+        {buildParagraphsWithCitations(analysis.strategic_recommendations)}
+
+        {/* Segment Positioning Playbook */}
+        <Text minPresenceAhead={30} style={styles.sectionHeading}>Segment Positioning Playbook</Text>
+        <View wrap={false} style={{ flexDirection: "row", marginTop: 6, marginBottom: 10 }}>
+          <View style={{ flex: 1, borderRadius: 4, borderWidth: 1, borderStyle: "solid", borderColor: "rgba(253,127,79,0.22)", backgroundColor: "#FFFFFF", padding: 10, marginRight: 12 }}>
+            <Text style={{ fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#FD7F4F", textTransform: "uppercase", marginBottom: 4 }}>QSR Client Strategy</Text>
+            <Text style={{ fontSize: 8, lineHeight: 1.4, color: "#051C2C" }}>
+              Leverage high-frequency bonus events, instant burn incentives, and deep app integration to capture daily habit spends.
+            </Text>
+          </View>
+          <View style={{ flex: 1, borderRadius: 4, borderWidth: 1, borderStyle: "solid", borderColor: "rgba(5,28,44,0.1)", backgroundColor: "#FFFFFF", padding: 10 }}>
+            <Text style={{ fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#3B82F6", textTransform: "uppercase", marginBottom: 4 }}>Retail Client Strategy</Text>
+            <Text style={{ fontSize: 8, lineHeight: 1.4, color: "#051C2C" }}>
+              Deploy co-branded partnerships, tiered soft benefits (free shipping), and high-ticket reward redemptions for customer lifetime value.
+            </Text>
+          </View>
+        </View>
+
         {references.length === 0 && <PDFWatermark />}
       </Page>
 
+      {/* Page 4: References */}
       {references.length > 0 && (
         <Page size="A4" style={styles.page}>
           <PageHeader />
           <View style={styles.refSection}>
-            <Text style={styles.refHeading}>References</Text>
+            <Text minPresenceAhead={30} style={styles.refHeading}>References</Text>
             {references.map((ref: any) => {
               const accessDate = ref.accessDate ?? "—";
               const snippet = ref.snippet
@@ -461,7 +518,7 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
               const displayUrl = ref.url.length > 70 ? ref.url.slice(0, 70) + "..." : ref.url;
 
               return (
-                <View key={ref.url} wrap={false} style={styles.refItem} id={`ref-${ref.num}`}>
+                <View key={ref.url} wrap={true} style={styles.refItem} id={`ref-${ref.num}`}>
                   <Link src={ref.url} style={[styles.refNum, { textDecoration: "none" }]}>
                     [{ref.num}]
                   </Link>
@@ -496,8 +553,119 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
   a.download = `Competitive_Analysis_${programNames.join("_vs_")}.pdf`;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 20000);
+}
+
+// ── Export helper for Multi-Program Comparison CSV ──
+export async function exportComparisonCSV(comparison: any, programNames: string[]) {
+  // Fetch fields in parallel
+  const programData = await Promise.all(
+    comparison.program_ids.map(async (pid: string) => {
+      const fieldsRes = await fetch(`${API_BASE}/api/programs/${pid}/fields`);
+      const fields: ExtractedField[] = fieldsRes.ok ? await fieldsRes.json() : [];
+      return { id: pid, fields };
+    })
+  );
+
+  const headers = [
+    "Category",
+    "Metric/Parameter",
+    ...programNames,
+    "Category Winner",
+    "Analysis Rationale"
+  ];
+
+  const rows: string[][] = [];
+
+  // 1. Executive Summary
+  rows.push([
+    "Executive Summary",
+    "Verdict Summary",
+    ...programNames.map(() => "N/A"),
+    "N/A",
+    comparison.analysis.executive_summary || ""
+  ]);
+
+  // 2. Market Matrix
+  comparison.analysis.matrix.forEach((item: any) => {
+    const repFields: Record<string, string> = {
+      "Program Basics": "program_type",
+      "Earn Mechanics": "base_earn_rate",
+      "Burn Mechanics": "redemption_options",
+      "Tier System": "tier_names",
+      "Digital Experience": "app_store_rating",
+      "Member Sentiment": "overall_rating",
+      "Competitive Position": "key_differentiators",
+      "Partnerships": "partner_names"
+    };
+    const fieldName = repFields[item.category] || "";
+    
+    const programVals = programNames.map((_, pIdx) => {
+      const field = programData[pIdx]?.fields.find((f: any) => f.field_name === fieldName);
+      return field?.field_value || "—";
+    });
+
+    const winner = item.rankings?.[0] || "Tie";
+
+    rows.push([
+      item.category,
+      fieldName ? fieldName.replace(/_/g, " ") : "Overview",
+      ...programVals,
+      winner,
+      item.rationale || ""
+    ]);
+  });
+
+  // 3. Side-by-Side parameters list
+  const extraFields = [
+    { label: "Points Expiry Policy", name: "expiry_policy" },
+    { label: "Minimum Redemption Threshold", name: "minimum_redemption" }
+  ];
+
+  extraFields.forEach((item) => {
+    const programVals = programNames.map((_, pIdx) => {
+      const field = programData[pIdx]?.fields.find((f: any) => f.field_name === item.name);
+      return field?.field_value || "—";
+    });
+    rows.push([
+      "Detailed Parameters",
+      item.label,
+      ...programVals,
+      "N/A",
+      "Fact-checked parameter value"
+    ]);
+  });
+
+  // 4. Strategic Recommendations
+  rows.push([
+    "Opportunities & Takeaways",
+    "Strategic Recommendations",
+    ...programNames.map(() => "N/A"),
+    "N/A",
+    comparison.analysis.strategic_recommendations || ""
+  ]);
+
+  const csvContent = [
+    headers.join(","),
+    ...rows.map(row => 
+      row.map(val => `"${val.replace(/"/g, '""')}"`).join(",")
+    )
+  ].join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Competitive_Analysis_${programNames.join("_vs_")}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 20000);
 }
 
 export function ExportBar({ narrative, fields, programName }: ExportBarProps) {
