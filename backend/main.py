@@ -37,6 +37,14 @@ app = FastAPI(
 
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+# Ensure the Vercel frontend is always allowed even if env var not set
+_EXTRA_ORIGINS = [
+    "https://infovac-kobie.vercel.app",
+    "http://localhost:3000",
+]
+for _o in _EXTRA_ORIGINS:
+    if _o not in ALLOWED_ORIGINS:
+        ALLOWED_ORIGINS.append(_o)
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,6 +53,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def create_tables_on_startup():
+    """Ensure all DB tables exist on startup.
+    
+    This is the safety net so the app works even if alembic migrations
+    haven't been run yet (e.g. fresh Render/Neon deployment).
+    """
+    try:
+        from backend.models import Base
+        from backend.db import engine
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"DB table creation warning: {e}")
 
 _ASYNCPG_DSN = os.getenv(
     "ASYNCPG_DSN",
