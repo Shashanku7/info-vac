@@ -391,7 +391,7 @@ export default function AdminDashboard() {
               </TabsContent>
 
               <TabsContent value="programs" className="mt-0">
-                <div className="rounded-[8px] divide-y overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.08)", divideColor: "rgba(255,255,255,0.06)" }}>
+                <div className="rounded-[8px] divide-y divide-white/10 overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
                   {programs.length === 0 ? (
                     <p className="text-xs text-center py-10" style={{ color: "rgba(255,255,255,0.3)" }}>
                       No programs found.
