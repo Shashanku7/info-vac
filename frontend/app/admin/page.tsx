@@ -311,7 +311,7 @@ export default function AdminDashboard() {
                       f.program_id,
                       f.source_url || "",
                       f.category || "",
-                      f.field_key || "",
+                      f.field_name || "",
                       f.field_value || "",
                       f.confidence !== null ? `${Math.round(f.confidence * 100)}%` : "",
                       f.gate_passed ? "Yes" : "No"
