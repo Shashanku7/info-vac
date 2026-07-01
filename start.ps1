@@ -5,9 +5,23 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
-Write-Host "==============================================" -ForegroundColor Cyan
+Write-Host "===============================================" -ForegroundColor Cyan
 Write-Host "InfoVac Services Launcher" -ForegroundColor Cyan
-Write-Host "==============================================" -ForegroundColor Cyan
+Write-Host "===============================================" -ForegroundColor Cyan
+
+# Kill any leftover backend processes from previous runs
+Write-Host "[0/3] Cleaning up any old backend processes..." -ForegroundColor DarkGray
+Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 1
+
+# Terminate any lingering PostgreSQL connections from old backend instances
+# (Docker keeps TCP connections alive even after Python processes die)
+try {
+    $pgClean = "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid != pg_backend_pid() AND datname = 'infovac';"
+    docker exec infovac_postgres psql -U infovac -d infovac -c $pgClean | Out-Null
+    Write-Host "[0/3] Stale DB connections cleared." -ForegroundColor DarkGray
+} catch {}
+
 
 # 1. Start Docker PostgreSQL
 Write-Host "[1/3] Starting Docker database (PostgreSQL)..." -ForegroundColor Yellow
@@ -46,11 +60,11 @@ if (-not $portOpen) {
 
 # 2. Start FastAPI Backend in a new window
 Write-Host "[2/3] Starting FastAPI Backend in a new window..." -ForegroundColor Yellow
-$backend = Start-Process -FilePath "cmd.exe" -ArgumentList "/c title InfoVac Backend && call .\venv_infovac\Scripts\activate.bat && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload" -PassThru
+$backend = Start-Process -FilePath "cmd.exe" -ArgumentList "/k title InfoVac Backend && call .\venv_infovac\Scripts\activate.bat && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000" -PassThru
 
 # 3. Start Next.js Frontend in a new window
 Write-Host "[3/3] Starting Next.js Frontend in a new window..." -ForegroundColor Yellow
-$frontend = Start-Process -FilePath "cmd.exe" -ArgumentList "/c title InfoVac Frontend && cd frontend && npm run dev" -PassThru
+$frontend = Start-Process -FilePath "cmd.exe" -ArgumentList "/k title InfoVac Frontend && cd frontend && npm run dev" -PassThru
 
 # Cleanup function to kill background processes on exit
 function Shutdown-Services {

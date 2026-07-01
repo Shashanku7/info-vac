@@ -40,7 +40,7 @@ echo [5/6] Checking Node.js and Installing Frontend Dependencies...
 node -v >nul 2>&1
 if %errorlevel% neq 0 (
     echo [WARNING] Node.js is not installed!
-    echo Please install Node.js (v18+) to run the frontend app: https://nodejs.org/
+    echo "Please install Node.js (v18+) to run the frontend app: https://nodejs.org/"
 ) else (
     echo Node.js is installed. Installing frontend packages...
     cd frontend

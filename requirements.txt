@@ -59,4 +59,3 @@ qdrant-client
 sentence-transformers
 rapidfuzz
 langchain-text-splitters
-torchvision
