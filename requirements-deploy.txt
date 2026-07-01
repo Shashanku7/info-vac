@@ -1,0 +1,52 @@
+# Web API
+fastapi
+uvicorn[standard]
+
+# Validation
+pydantic
+pydantic-settings
+
+# Database
+sqlalchemy
+asyncpg
+alembic
+psycopg[binary]
+
+# LLM Orchestration
+langgraph
+langchain
+langchain-core
+
+# Structured Extraction
+instructor
+
+# LLM Providers
+anthropic
+google-generativeai
+
+# Search & Crawling
+tavily-python
+firecrawl-py
+
+# HTTP
+httpx
+aiohttp
+
+# Utilities
+python-dotenv
+tenacity
+orjson
+
+# SSE
+sse-starlette
+
+# Logging
+structlog
+
+# RAG — CPU-only torch (no CUDA, ~800 MB lighter)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+sentence-transformers
+qdrant-client
+rapidfuzz
+langchain-text-splitters

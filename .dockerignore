@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+.git/
+frontend/
+*.pyc
+*.pyo
+tests/
+graphify-out/
+docs/
+trial_UIs/
+UI_example/
+temp/
