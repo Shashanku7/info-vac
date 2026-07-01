@@ -7,10 +7,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv(
+_raw_db_url = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://infovac:infovac_dev@localhost:5432/infovac",
 )
+# Neon (and some other hosts) give a plain postgres:// or postgresql:// URL.
+# SQLAlchemy async requires the +asyncpg driver dialect to be specified.
+if _raw_db_url.startswith("postgres://"):
+    _raw_db_url = _raw_db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif _raw_db_url.startswith("postgresql://"):
+    _raw_db_url = _raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+DATABASE_URL = _raw_db_url
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
