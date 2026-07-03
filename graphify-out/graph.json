@@ -1217,7 +1217,7 @@
       "label": "extract_fields()",
       "file_type": "code",
       "source_file": "backend/extractor.py",
-      "source_location": "L351",
+      "source_location": "L357",
       "_origin": "ast",
       "id": "backend_extractor_extract_fields",
       "community": 1,
@@ -1227,7 +1227,7 @@
       "label": "retry_failed_fields()",
       "file_type": "code",
       "source_file": "backend/extractor.py",
-      "source_location": "L497",
+      "source_location": "L503",
       "_origin": "ast",
       "id": "backend_extractor_retry_failed_fields",
       "community": 54,
@@ -1287,9 +1287,9 @@
       "label": "Extract all 44 fields across 9 categories from the provided sources in parallel.",
       "file_type": "rationale",
       "source_file": "backend/extractor.py",
-      "source_location": "L357",
+      "source_location": "L363",
       "_origin": "ast",
-      "id": "backend_extractor_rationale_357",
+      "id": "backend_extractor_rationale_363",
       "community": 1,
       "norm_label": "extract all 44 fields across 9 categories from the provided sources in parallel."
     },
@@ -1297,9 +1297,9 @@
       "label": "One-shot LLM retry for fields that failed gate verification.      Called by veri",
       "file_type": "rationale",
       "source_file": "backend/extractor.py",
-      "source_location": "L504",
+      "source_location": "L510",
       "_origin": "ast",
-      "id": "backend_extractor_rationale_504",
+      "id": "backend_extractor_rationale_510",
       "community": 54,
       "norm_label": "one-shot llm retry for fields that failed gate verification.      called by veri"
     },
@@ -19367,11 +19367,11 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/extractor.py",
-      "source_location": "L357",
+      "source_location": "L363",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "backend_extractor_rationale_357",
-      "target": "backend_extractor_extract_fields"
+      "source": "backend_extractor_rationale_363",
+      "target": "backend_extractor_extract_fields",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -19399,11 +19399,11 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/extractor.py",
-      "source_location": "L504",
+      "source_location": "L510",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "backend_extractor_rationale_504",
-      "target": "backend_extractor_retry_failed_fields"
+      "source": "backend_extractor_rationale_510",
+      "target": "backend_extractor_retry_failed_fields",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -23370,9 +23370,9 @@
       "source_file": "backend/retriever.py",
       "source_location": "L137",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "backend_retriever_rationale_137",
-      "target": "backend_retriever_tavily_search",
-      "confidence_score": 1.0
+      "target": "backend_retriever_tavily_search"
     },
     {
       "relation": "references",
@@ -23402,9 +23402,9 @@
       "source_file": "backend/retriever.py",
       "source_location": "L175",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "backend_retriever_rationale_175",
-      "target": "backend_retriever_check_robots",
-      "confidence_score": 1.0
+      "target": "backend_retriever_check_robots"
     },
     {
       "relation": "references",
@@ -23434,9 +23434,9 @@
       "source_file": "backend/retriever.py",
       "source_location": "L204",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "backend_retriever_rationale_204",
-      "target": "backend_retriever_playwright_fetch",
-      "confidence_score": 1.0
+      "target": "backend_retriever_playwright_fetch"
     },
     {
       "relation": "rationale_for",
@@ -23444,9 +23444,9 @@
       "source_file": "backend/retriever.py",
       "source_location": "L244",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "backend_retriever_rationale_244",
-      "target": "backend_retriever_async_firecrawl_fetch",
-      "confidence_score": 1.0
+      "target": "backend_retriever_async_firecrawl_fetch"
     },
     {
       "relation": "references",
@@ -23476,9 +23476,9 @@
       "source_file": "backend/retriever.py",
       "source_location": "L310",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "backend_retriever_rationale_310",
-      "target": "backend_retriever_discover_sources",
-      "confidence_score": 1.0
+      "target": "backend_retriever_discover_sources"
     },
     {
       "relation": "imports",
@@ -42300,5 +42300,5 @@
       "source_file": "docker-compose.yml"
     }
   ],
-  "built_at_commit": "fb0b6655b0859c3214a02a275181aeaab5ae9790"
+  "built_at_commit": "92a5e046933029f5ff612fbda8841f0fbc677ee9"
 }

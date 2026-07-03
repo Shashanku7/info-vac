@@ -1,7 +1,7 @@
 # Graph Report - KOBIE_hackathon  (2026-07-03)
 
 ## Corpus Check
-- 153 files · ~293,162 words
+- 153 files · ~293,186 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `fb0b6655`
+- Built from commit: `92a5e046`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

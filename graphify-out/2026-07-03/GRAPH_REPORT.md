@@ -1,16 +1,16 @@
 # Graph Report - KOBIE_hackathon  (2026-07-03)
 
 ## Corpus Check
-- 153 files · ~293,119 words
+- 153 files · ~293,162 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1565 nodes · 2555 edges · 138 communities (125 shown, 13 thin omitted)
+- 1565 nodes · 2555 edges · 139 communities (126 shown, 13 thin omitted)
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 131 edges (avg confidence: 0.57)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `76db998e`
+- Built from commit: `fb0b6655`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -121,6 +121,7 @@
 - [[_COMMUNITY_Community 135|Community 135]]
 - [[_COMMUNITY_Community 136|Community 136]]
 - [[_COMMUNITY_Community 137|Community 137]]
+- [[_COMMUNITY_Community 138|Community 138]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `cn()` - 88 edges
@@ -163,7 +164,7 @@
 - **Multi-Agent LangGraph Pipeline** — backend_retriever, backend_extractor, backend_gate, backend_verifier, backend_narrator [EXTRACTED 1.00]
 - **Data Persistence & Vector Search** — backend_models, postgres_db, backend_qdrant_client [INFERRED 0.90]
 
-## Communities (138 total, 13 thin omitted)
+## Communities (139 total, 13 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.17
@@ -266,8 +267,8 @@ Cohesion: 0.19
 Nodes (14): _build_golden_qa(), _build_ragas_llm(), _call_llm(), _fetch_program_data(), Any, InfoVac — RAGAS Evaluation Suite  Evaluates the RAG chat pipeline quality using, Auto-generate up to max_pairs QA pairs from gate-passed fields., Call the project's LLM backend and return an answer. (+6 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.11
-Nodes (22): Embed query, compute sparse TF-IDF, and execute Qdrant RRF hybrid search., _sync_search_qdrant(), embed_texts(), Convert a list of text chunks into vector embeddings using Google's API with key, ensure_collection(), get_qdrant_client(), Ensure the Qdrant collection exists for storing source chunks.      Upgraded for, _call_llm_judge() (+14 more)
+Cohesion: 0.15
+Nodes (16): Embed query, compute sparse TF-IDF, and execute Qdrant RRF hybrid search., _sync_search_qdrant(), embed_texts(), Convert a list of text chunks into vector embeddings using Google's API with key, _call_llm_judge(), Verify if the quote is semantically present in context, allowing minor formattin, Verify that when a source_type is specified, Qdrant FieldCondition is built., Verify that embed_texts rotates keys if the first one throws an exception. (+8 more)
 
 ### Community 26 - "Community 26"
 Cohesion: 0.11
@@ -536,6 +537,10 @@ Nodes (9): 🏢 1. Concept Map: The 5-Layer Stack, 1. Frontend Layer (`frontend/
 ### Community 137 - "Community 137"
 Cohesion: 0.20
 Nodes (9): 🔄 1. Data Flow Diagram (DFD), 🗺️ 2. User Flow Diagram (User Journey), 🗄️ 3. Database Entity Relationship Diagram (ERD), 🤖 4. AI Agent Workflow Diagram, 🧩 5. Component Diagram, 📡 6. Deployment Diagram, 📡 7. Sequence Diagram, InfoVac: System Flows, User Journeys & Database ER Diagrams (+1 more)
+
+### Community 138 - "Community 138"
+Cohesion: 0.38
+Nodes (6): ensure_collection(), get_qdrant_client(), Ensure the Qdrant collection exists for storing source chunks.      Upgraded for, QdrantClient, Qdrant dense search for the question — returns top 5 text chunks., _retrieve_context()
 
 ## Knowledge Gaps
 - **519 isolated node(s):** `inter`, `roboto`, `geistMono`, `metadata`, `$schema` (+514 more)
