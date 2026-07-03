@@ -396,7 +396,7 @@ async def discover_sources(
     firecrawl_count = 0
     fc_lock = asyncio.Lock()
     db_lock = asyncio.Lock()
-    sem = asyncio.Semaphore(10)
+    sem = asyncio.Semaphore(2) # Prevent OOM crash on 512MB RAM containers
 
     async def process_candidate(idx: int, candidate: _Candidate, http: httpx.AsyncClient):
         nonlocal firecrawl_count
