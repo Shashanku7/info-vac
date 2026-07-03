@@ -108,6 +108,8 @@ _MAX_FIRECRAWL_FETCHES = 22
 # Seconds to sleep between Firecrawl calls (rate-limit courtesy)
 _FIRECRAWL_DELAY = 0.3
 
+_PLAYWRIGHT_AVAILABLE = True
+
 # Hard per-call timeout for BS4 HTTP GET (prevents blocking DNS from escaping async)
 _BS4_HTTP_TIMEOUT = 7.0
 
@@ -200,6 +202,10 @@ async def _check_robots(url: str, http: httpx.AsyncClient) -> str:
 
 async def _playwright_fetch(url: str) -> tuple[Optional[str], Optional[str]]:
     """Local fallback: Spawn headless Chromium with stealth to bypass Cloudflare."""
+    global _PLAYWRIGHT_AVAILABLE
+    if not _PLAYWRIGHT_AVAILABLE:
+        raise ValueError("Playwright is marked as unavailable on this host.")
+
     from playwright.async_api import async_playwright
     from playwright_stealth import use_stealth
     from bs4 import BeautifulSoup
@@ -487,6 +493,10 @@ async def discover_sources(
                         raise ValueError("Stealth browser extraction returned empty content")
                 except Exception as fallback_exc:
                     log.warning("playwright_scraping_failed_falling_back_to_tavily", url=candidate.url, error=str(fallback_exc)[:200])
+                    # Disable Playwright globally for subsequent URLs if it fails to launch/run
+                    global _PLAYWRIGHT_AVAILABLE
+                    _PLAYWRIGHT_AVAILABLE = False
+                    
                     raw_content = candidate.tavily_snippet
                     fetch_method = "tavily_snippet"
                     fetch_status = "tavily_fallback"

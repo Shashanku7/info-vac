@@ -1,11 +1,11 @@
 # Graph Report - KOBIE_hackathon  (2026-07-03)
 
 ## Corpus Check
-- 153 files · ~293,070 words
+- 153 files · ~293,119 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1564 nodes · 2554 edges · 138 communities (126 shown, 12 thin omitted)
+- 1565 nodes · 2555 edges · 138 communities (125 shown, 13 thin omitted)
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 131 edges (avg confidence: 0.57)
 - Token cost: 0 input · 0 output
 
@@ -74,6 +74,7 @@
 - [[_COMMUNITY_Community 85|Community 85]]
 - [[_COMMUNITY_Community 86|Community 86]]
 - [[_COMMUNITY_Community 87|Community 87]]
+- [[_COMMUNITY_Community 88|Community 88]]
 - [[_COMMUNITY_Community 89|Community 89]]
 - [[_COMMUNITY_Community 90|Community 90]]
 - [[_COMMUNITY_Community 91|Community 91]]
@@ -105,7 +106,6 @@
 - [[_COMMUNITY_Community 117|Community 117]]
 - [[_COMMUNITY_Community 119|Community 119]]
 - [[_COMMUNITY_Community 120|Community 120]]
-- [[_COMMUNITY_Community 121|Community 121]]
 - [[_COMMUNITY_Community 122|Community 122]]
 - [[_COMMUNITY_Community 123|Community 123]]
 - [[_COMMUNITY_Community 124|Community 124]]
@@ -121,7 +121,6 @@
 - [[_COMMUNITY_Community 135|Community 135]]
 - [[_COMMUNITY_Community 136|Community 136]]
 - [[_COMMUNITY_Community 137|Community 137]]
-- [[_COMMUNITY_Community 138|Community 138]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `cn()` - 88 edges
@@ -164,19 +163,19 @@
 - **Multi-Agent LangGraph Pipeline** — backend_retriever, backend_extractor, backend_gate, backend_verifier, backend_narrator [EXTRACTED 1.00]
 - **Data Persistence & Vector Search** — backend_models, postgres_db, backend_qdrant_client [INFERRED 0.90]
 
-## Communities (138 total, 12 thin omitted)
+## Communities (138 total, 13 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.17
-Nodes (33): ChatRequest, MarketMatrixOutput, MatrixItem, Comparator — Phase 6.  Generates a strategic competitive comparison between mult, Rankings and rationale for a single loyalty program category., Structured competitive market matrix comparison., CompareRequest, ExtractedFieldResponse (+25 more)
+Nodes (33): MarketMatrixOutput, MatrixItem, Comparator — Phase 6.  Generates a strategic competitive comparison between mult, Rankings and rationale for a single loyalty program category., Structured competitive market matrix comparison., CompareRequest, ExtractedFieldResponse, PipelineEventResponse (+25 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.06
-Nodes (61): _get_gemini_keys(), Returns a list of all configured Gemini keys, checking GEMINI_API_KEYS and singl, BurnMechanics, CompetitivePosition, DigitalExperience, EarnMechanics, EvidenceState, EvidenceStateValue (+53 more)
+Cohesion: 0.07
+Nodes (54): BurnMechanics, CompetitivePosition, DigitalExperience, EarnMechanics, EvidenceState, EvidenceStateValue, ExtractedSchema, ExtractedValue (+46 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.04
-Nodes (47): Toaster(), dependencies, ai, @base-ui/react, class-variance-authority, clsx, cmdk, lucide-react (+39 more)
+Nodes (45): dependencies, ai, @base-ui/react, class-variance-authority, clsx, cmdk, lucide-react, next (+37 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.09
@@ -195,16 +194,16 @@ Cohesion: 0.09
 Nodes (29): _build_context(), _calculate_usage_cost(), _call_narrator(), _count_words(), generate_narrative(), Any, AsyncSession, ExtractedField (+21 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.12
-Nodes (22): ComparatorPicker(), ConfidenceBarChart(), ConfidenceBarChartProps, CostCard(), CostCardProps, COLORS, GateDonutChart(), GateDonutChartProps (+14 more)
+Cohesion: 0.11
+Nodes (26): AdminDashboard(), deriveStats(), ComparatorPicker(), ConfidenceBarChart(), ConfidenceBarChartProps, CostCard(), CostCardProps, COLORS (+18 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.12
-Nodes (9): DropdownMenuCheckboxItem(), DropdownMenuContent(), DropdownMenuItem(), DropdownMenuLabel(), DropdownMenuRadioItem(), DropdownMenuSeparator(), DropdownMenuShortcut(), DropdownMenuSubContent() (+1 more)
+Cohesion: 0.22
+Nodes (10): EvolutionTab(), EvolutionTabProps, Alert(), AlertAction(), AlertDescription(), AlertTitle(), alertVariants, Badge() (+2 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.08
-Nodes (40): chat_with_comparison(), chat_with_program(), create_comparison(), create_program(), get_chat_history(), get_comparison(), get_comparison_chat_history(), get_narrative() (+32 more)
+Cohesion: 0.09
+Nodes (36): create_comparison(), create_program(), get_chat_history(), get_comparison(), get_comparison_chat_history(), get_narrative(), get_program(), get_program_events() (+28 more)
 
 ### Community 10 - "Community 10"
 Cohesion: 0.17
@@ -231,8 +230,8 @@ Cohesion: 0.14
 Nodes (16): ProgramName, Instructor + Gemini smoke test — Phase 0.  Demonstrates that:   1. Instructor wr, Single-field model — simplest possible extraction target., run_smoke_test(), _get_asyncpg_conn(), Phase 0 Definition-of-Done tests.  All five tests must pass for Phase 0 to be, DoD: that UUID is a real row in programs., DoD: standalone script → one Instructor+Gemini call returns valid parsed Pydanti (+8 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.09
-Nodes (33): BriefView(), BriefViewProps, NarrativeSection, CitationBadge(), CitationBadgeProps, ComparisonExportButton(), ComparisonExportButtonProps, EvidenceDrawer() (+25 more)
+Cohesion: 0.10
+Nodes (28): BriefView(), BriefViewProps, NarrativeSection, CitationBadge(), CitationBadgeProps, ComparisonExportButton(), ComparisonExportButtonProps, EvidenceDrawer() (+20 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.20
@@ -263,20 +262,20 @@ Cohesion: 0.22
 Nodes (9): 🕸️ 16. Graph Setup (`orchestrator/graph.py`), ⚙️ 17. Pipeline Nodes (`orchestrator/nodes.py`), 📦 18. Pipeline State (`orchestrator/state.py`), 📢 19. Event Dispatcher (`orchestrator/events.py`), Cool Features & Surprises:, Cool Features & Surprises:, Cool Features & Surprises:, Cool Features & Surprises: (+1 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.16
-Nodes (17): get_qdrant_client(), _build_golden_qa(), _build_ragas_llm(), _call_llm(), _fetch_program_data(), Any, InfoVac — RAGAS Evaluation Suite  Evaluates the RAG chat pipeline quality using, Auto-generate up to max_pairs QA pairs from gate-passed fields. (+9 more)
+Cohesion: 0.19
+Nodes (14): _build_golden_qa(), _build_ragas_llm(), _call_llm(), _fetch_program_data(), Any, InfoVac — RAGAS Evaluation Suite  Evaluates the RAG chat pipeline quality using, Auto-generate up to max_pairs QA pairs from gate-passed fields., Call the project's LLM backend and return an answer. (+6 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.15
-Nodes (16): Embed query, compute sparse TF-IDF, and execute Qdrant RRF hybrid search., _sync_search_qdrant(), embed_texts(), Convert a list of text chunks into vector embeddings using Google's API with key, _call_llm_judge(), Verify if the quote is semantically present in context, allowing minor formattin, Verify that when a source_type is specified, Qdrant FieldCondition is built., Verify that embed_texts rotates keys if the first one throws an exception. (+8 more)
+Cohesion: 0.11
+Nodes (22): Embed query, compute sparse TF-IDF, and execute Qdrant RRF hybrid search., _sync_search_qdrant(), embed_texts(), Convert a list of text chunks into vector embeddings using Google's API with key, ensure_collection(), get_qdrant_client(), Ensure the Qdrant collection exists for storing source chunks.      Upgraded for, _call_llm_judge() (+14 more)
 
 ### Community 26 - "Community 26"
 Cohesion: 0.11
 Nodes (17): 10-Day Task Breakdown, Adversarial Case Handling, API Design, Confidence Formula, Database Schema, Endpoints, InfoVac: Solution Document, MVP Architecture (+9 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.23
-Nodes (13): ChatResponse, handle_chat_message(), handle_comparison_chat_message(), _is_unk_reply(), AsyncSession, _make_client(), Compatibility helper. Returns a routing fallback client that transparently fails, Conversation (+5 more)
+Cohesion: 0.22
+Nodes (16): ChatRequest, ChatResponse, handle_chat_message(), handle_comparison_chat_message(), _is_unk_reply(), AsyncSession, chat_with_comparison(), chat_with_program() (+8 more)
 
 ### Community 28 - "Community 28"
 Cohesion: 0.12
@@ -287,8 +286,8 @@ Cohesion: 0.33
 Nodes (5): Phase 4 orchestrator — live e2e test.  Requires:   - docker compose up -d  (P, Full pipeline run via real API.      DoD: programs.status = 'complete' within, Create a program, start pipeline, collect SSE events, assert order.      Uses, test_e2e_run_completes(), test_sse_events_in_correct_order()
 
 ### Community 30 - "Community 30"
-Cohesion: 0.12
-Nodes (23): AdminDashboard(), deriveStats(), AnalystWorkspace(), EvolutionTab(), EvolutionTabProps, FieldsGrid(), SingleProgramView(), Alert() (+15 more)
+Cohesion: 0.16
+Nodes (15): AnalystWorkspace(), ExportBar(), PipelineTracker(), COMPARISON_STEPS, ProgressCardLoader(), ProgressCardLoaderProps, SINGLE_STEPS, SingleProgramView() (+7 more)
 
 ### Community 31 - "Community 31"
 Cohesion: 0.33
@@ -307,8 +306,8 @@ Cohesion: 0.15
 Nodes (12): 1. Environment Setup, 1. The Multi-Agent Pipeline (Backend), 2. High-Density UI Workspace (Frontend), 2. Installation (Automated Setup), 3. Running the Platform (Single-Click), 🕸️ Codebase Knowledge Graph (Graphify), InfoVac — Autonomous Competitive Intelligence Platform, Prerequisites (+4 more)
 
 ### Community 54 - "Community 54"
-Cohesion: 0.10
-Nodes (34): get_db(), make_background_session(), AsyncSession, Database connection — async SQLAlchemy engine + session factory., FastAPI dependency — yields an async DB session., NullPool session for background pipeline tasks.      Creates a brand-new engin, gate_verify_multi_source(), Verify each segment of evidence_quote against ALL available sources.          Re (+26 more)
+Cohesion: 0.12
+Nodes (35): One-shot LLM retry for fields that failed gate verification.      Called by veri, retry_failed_fields(), gate_verify_multi_source(), Verify each segment of evidence_quote against ALL available sources.          Re, emit_event(), Insert a pipeline_events row.      The Postgres trigger `trg_pipeline_event` fir, Update programs.status (and optionally error_message / completed_at)., set_status() (+27 more)
 
 ### Community 55 - "Community 55"
 Cohesion: 0.22
@@ -339,8 +338,8 @@ Cohesion: 0.15
 Nodes (21): find_best_source_for_quote(), gate_verify(), gate_verify_batch(), GateResult, Citation-Verification Gate — Phase 2.  Every non-null field extracted by the Ext, Verify multiple fields against one source in a single call.      Args:         f, Scan ALL fetched sources to find where evidence_quote best matches.      Called, Result of a single gate verification. (+13 more)
 
 ### Community 83 - "Community 83"
-Cohesion: 0.11
-Nodes (14): chunk_text(), Split raw text into semantic chunks for vector search., APIKeyBroker, Thread-safe key manager that load-balances key usage and tracks failures., Thread-safe checkout of the next available healthy key.         Blocks until a, Stall an API key if it fails., Report failure on the key that was last checked out in the current thread., FallbackChat (+6 more)
+Cohesion: 0.08
+Nodes (25): chunk_text(), _get_gemini_keys(), Split raw text into semantic chunks for vector search., Returns a list of all configured Gemini keys, checking GEMINI_API_KEYS and singl, APIKeyBroker, Thread-safe key manager that load-balances key usage and tracks failures., Thread-safe checkout of the next available healthy key.         Blocks until a, Stall an API key if it fails. (+17 more)
 
 ### Community 84 - "Community 84"
 Cohesion: 0.29
@@ -357,6 +356,10 @@ Nodes (7): 🔑 1. API Key Broker (`backend/key_broker.py`), 🔀 2. Fallback Ro
 ### Community 87 - "Community 87"
 Cohesion: 0.29
 Nodes (7): 🖥️ 20. Workspace Home (`frontend/app/page.tsx`), 📊 21. Admin Dashboard (`frontend/app/admin/page.tsx`), 🎨 22. App Layout (`frontend/app/layout.tsx`), Cool Features & Surprises:, Cool Features & Surprises:, Cool Features & Surprises:, InfoVac Codebase Surprises & Engineering Audit (Part 7: App Gateway Pages)
+
+### Community 88 - "Community 88"
+Cohesion: 0.20
+Nodes (9): get_db(), make_background_session(), AsyncSession, Database connection — async SQLAlchemy engine + session factory., FastAPI dependency — yields an async DB session., NullPool session for background pipeline tasks.      Creates a brand-new engin, Pipeline event emission and program status helpers.  Separated from nodes.py so, Update programs.trace_url with a public LangSmith tracing URL.          Robust t (+1 more)
 
 ### Community 89 - "Community 89"
 Cohesion: 0.29
@@ -463,16 +466,16 @@ Cohesion: 0.40
 Nodes (5): 9. Navigation UX, How to recreate it, What it is, What psychological effect it creates, Why Kobie chose it
 
 ### Community 115 - "Community 115"
-Cohesion: 0.29
-Nodes (6): db_session(), AsyncSession, Shared pytest fixtures for InfoVac tests.  Key design decision: NullPool. asyncp, Fresh NullPool engine + session per test — no cross-loop asyncpg issues., Insert a Program row; delete it (+ cascaded sources) after each test., temp_program()
+Cohesion: 0.67
+Nodes (3): AsyncSession, Insert a Program row; delete it (+ cascaded sources) after each test., temp_program()
 
 ### Community 116 - "Community 116"
 Cohesion: 0.10
 Nodes (20): 🎞️ 1. 3-Minute Video Demo Script, 1. Dynamic TF-IDF recalculations (`chat.py`), 📊 2. 10-Slide Pitch Presentation Outline (PPT), 2. Synchronous Instructor Calls (`nodes.py` & `evolution.py`), 3. Cross-Encoder Model Import Lag (`chat.py`), 🛠️ 3. Engineering Limitations & Future Scope Audit, 4. Client-side PDF Layout bounds (`ExportBar.tsx`), 5. Dependency on Tavily / Firecrawl API Quotas (`retriever.py`) (+12 more)
 
 ### Community 117 - "Community 117"
-Cohesion: 0.18
-Nodes (8): EvidenceDrawerProps, Sheet(), SheetContent(), SheetDescription(), SheetFooter(), SheetHeader(), SheetOverlay(), SheetTitle()
+Cohesion: 0.16
+Nodes (10): EvidenceDrawerProps, ScrollArea(), ScrollBar(), Sheet(), SheetContent(), SheetDescription(), SheetFooter(), SheetHeader() (+2 more)
 
 ### Community 119 - "Community 119"
 Cohesion: 0.21
@@ -487,20 +490,16 @@ Cohesion: 0.10
 Nodes (20): 🔑 1. API Credentials & Key Management, 🌐 2. Web Crawling, Ingestion & Vectorization, ⚙️ 3. Structured Extraction & Citation Verification, 📝 4. Synthesis, Chat RAG & API Orchestrations, 📝 Analyst Brief Narrator (`narrator.py`), 🛣️ API Gateway & Real-Time Streams (`main.py`), 🔄 API Key Broker (`key_broker.py`), 🔲 Comparative Matrix Engine (`comparator.py`) (+12 more)
 
 ### Community 123 - "Community 123"
-Cohesion: 0.22
-Nodes (16): Avatar(), AvatarBadge(), AvatarFallback(), AvatarGroup(), AvatarGroupCount(), AvatarImage(), SelectContent(), SelectGroup() (+8 more)
+Cohesion: 0.09
+Nodes (32): Avatar(), AvatarBadge(), AvatarFallback(), AvatarGroup(), AvatarGroupCount(), AvatarImage(), DropdownMenuCheckboxItem(), DropdownMenuContent() (+24 more)
 
 ### Community 124 - "Community 124"
 Cohesion: 0.10
 Nodes (19): 🗄️ 1. Database Architecture & Design Rationale, 🏗️ 2. SQLAlchemy ORM Models (`backend/models.py`), ⏳ 3. Alembic Migration History & Specs, 🔧 4. Migrations Configuration (`alembic/env.py`), A. `Program`, B. `Source`, C. `ExtractedField`, D. `PipelineEvent` (+11 more)
 
-### Community 125 - "Community 125"
-Cohesion: 0.50
-Nodes (4): get_program_evolution(), AsyncSession, UUID, Analyze changes in program fields over time (oldest run vs. newest run).
-
 ### Community 126 - "Community 126"
-Cohesion: 0.14
-Nodes (16): ALL_FIELDS, CATEGORY_FIELDS, PipelineTracker(), PipelineTrackerProps, RunnerStagePanel, SingleProgramViewProps, UseSSEOptions, UseSSEReturn (+8 more)
+Cohesion: 0.15
+Nodes (15): ALL_FIELDS, CATEGORY_FIELDS, PipelineTrackerProps, RunnerStagePanel, SingleProgramViewProps, UseSSEOptions, UseSSEReturn, getSSEUrl() (+7 more)
 
 ### Community 127 - "Community 127"
 Cohesion: 0.12
@@ -530,10 +529,6 @@ Nodes (5): ⏱️ 56. Pipeline Event Scopes (`scratch/why_failed.py`), 📋 57. 
 Cohesion: 0.50
 Nodes (3): 🏆 Consolidated Master Submission Document, 🗂️ Documentation Parts Tracker, InfoVac Hackathon Artifacts Documentation Index
 
-### Community 135 - "Community 135"
-Cohesion: 0.19
-Nodes (13): verify_node(), iter_fields(), PipelineState, Pipeline state definition and field iteration helpers., Yield (category_key, field_name, ev_dict) for every field in the schema.      Ar, Shared state flowing through the LangGraph pipeline.      All values must be JSO, _make_state(), Phase 4 orchestrator — unit tests (no live marker).  Tests:   test_pipeline_e (+5 more)
-
 ### Community 136 - "Community 136"
 Cohesion: 0.20
 Nodes (9): 🏢 1. Concept Map: The 5-Layer Stack, 1. Frontend Layer (`frontend/`), 2. Backend Layer (`backend/` & `orchestrator/`), 🕸️ 2. Detailed Component Mermaid Diagram, 📝 3. Architectural Component Layer Descriptions, 3. Database Layer (SQL & Vector), 4. AI Services Layer, 5. External APIs Layer (+1 more)
@@ -542,19 +537,15 @@ Nodes (9): 🏢 1. Concept Map: The 5-Layer Stack, 1. Frontend Layer (`frontend/
 Cohesion: 0.20
 Nodes (9): 🔄 1. Data Flow Diagram (DFD), 🗺️ 2. User Flow Diagram (User Journey), 🗄️ 3. Database Entity Relationship Diagram (ERD), 🤖 4. AI Agent Workflow Diagram, 🧩 5. Component Diagram, 📡 6. Deployment Diagram, 📡 7. Sequence Diagram, InfoVac: System Flows, User Journeys & Database ER Diagrams (+1 more)
 
-### Community 138 - "Community 138"
-Cohesion: 0.40
-Nodes (5): Progress(), ProgressIndicator(), ProgressLabel(), ProgressTrack(), ProgressValue()
-
 ## Knowledge Gaps
 - **519 isolated node(s):** `inter`, `roboto`, `geistMono`, `metadata`, `$schema` (+514 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **12 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **13 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `cn()` connect `Community 123` to `Community 7`, `Community 8`, `Community 138`, `Community 17`, `Community 19`, `Community 117`, `Community 119`, `Community 121`, `Community 30`?**
+- **Why does `cn()` connect `Community 123` to `Community 7`, `Community 8`, `Community 17`, `Community 19`, `Community 117`, `Community 119`, `Community 30`?**
   _High betweenness centrality (0.022) - this node is a cross-community bridge._
 - **Why does `ProgramName` connect `Community 15` to `Community 0`?**
   _High betweenness centrality (0.012) - this node is a cross-community bridge._
@@ -565,6 +556,6 @@ _Questions this graph is uniquely positioned to answer:_
 - **What connects `Add raw_html TEXT column to sources table.      Stores up to 80K chars of raw HT`, `Add citation_start and citation_end columns to extracted_fields.      Used to st`, `Add total_cost column to programs table.      Tracks accumulated LLM API cost in` to the rest of the system?**
   _706 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 1` be split into smaller, more focused modules?**
-  _Cohesion score 0.060153776571687016 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06836158192090395 - nodes in this community are weakly interconnected._
 - **Should `Community 2` be split into smaller, more focused modules?**
-  _Cohesion score 0.041666666666666664 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.043478260869565216 - nodes in this community are weakly interconnected._

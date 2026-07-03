@@ -2517,7 +2517,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_qdrant_client",
-      "community": 25,
+      "community": 138,
       "norm_label": "qdrant_client.py"
     },
     {
@@ -2527,7 +2527,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "backend_qdrant_client_get_qdrant_client",
-      "community": 25,
+      "community": 138,
       "norm_label": "get_qdrant_client()"
     },
     {
@@ -2538,7 +2538,7 @@
       "origin_file": "D:\\Coding\\KOBIE_hackathon\\backend\\qdrant_client.py",
       "_origin": "ast",
       "id": "qdrantclient",
-      "community": 25,
+      "community": 138,
       "norm_label": "qdrantclient"
     },
     {
@@ -2548,7 +2548,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "backend_qdrant_client_ensure_collection",
-      "community": 25,
+      "community": 138,
       "norm_label": "ensure_collection()"
     },
     {
@@ -2558,7 +2558,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "backend_qdrant_client_rationale_18",
-      "community": 25,
+      "community": 138,
       "norm_label": "ensure the qdrant collection exists for storing source chunks.      upgraded for"
     },
     {
@@ -2585,7 +2585,7 @@
       "label": "_Candidate",
       "file_type": "code",
       "source_file": "backend/retriever.py",
-      "source_location": "L125",
+      "source_location": "L127",
       "_origin": "ast",
       "id": "backend_retriever_candidate",
       "community": 4,
@@ -2595,7 +2595,7 @@
       "label": "_tavily_search()",
       "file_type": "code",
       "source_file": "backend/retriever.py",
-      "source_location": "L134",
+      "source_location": "L136",
       "_origin": "ast",
       "id": "backend_retriever_tavily_search",
       "community": 4,
@@ -2605,7 +2605,7 @@
       "label": "_check_robots()",
       "file_type": "code",
       "source_file": "backend/retriever.py",
-      "source_location": "L172",
+      "source_location": "L174",
       "_origin": "ast",
       "id": "backend_retriever_check_robots",
       "community": 4,
@@ -2626,7 +2626,7 @@
       "label": "_playwright_fetch()",
       "file_type": "code",
       "source_file": "backend/retriever.py",
-      "source_location": "L201",
+      "source_location": "L203",
       "_origin": "ast",
       "id": "backend_retriever_playwright_fetch",
       "community": 4,
@@ -2636,7 +2636,7 @@
       "label": "_async_firecrawl_fetch()",
       "file_type": "code",
       "source_file": "backend/retriever.py",
-      "source_location": "L235",
+      "source_location": "L241",
       "_origin": "ast",
       "id": "backend_retriever_async_firecrawl_fetch",
       "community": 4,
@@ -2646,7 +2646,7 @@
       "label": "discover_sources()",
       "file_type": "code",
       "source_file": "backend/retriever.py",
-      "source_location": "L299",
+      "source_location": "L305",
       "_origin": "ast",
       "id": "backend_retriever_discover_sources",
       "community": 4,
@@ -2687,9 +2687,9 @@
       "label": "Run one Tavily query, rotating keys if rate-limited or failed.",
       "file_type": "rationale",
       "source_file": "backend/retriever.py",
-      "source_location": "L135",
+      "source_location": "L137",
       "_origin": "ast",
-      "id": "backend_retriever_rationale_135",
+      "id": "backend_retriever_rationale_137",
       "community": 4,
       "norm_label": "run one tavily query, rotating keys if rate-limited or failed."
     },
@@ -2697,9 +2697,9 @@
       "label": "Check robots.txt for `url`.      Returns:         'allowed'           \u2014 expli",
       "file_type": "rationale",
       "source_file": "backend/retriever.py",
-      "source_location": "L173",
+      "source_location": "L175",
       "_origin": "ast",
-      "id": "backend_retriever_rationale_173",
+      "id": "backend_retriever_rationale_175",
       "community": 4,
       "norm_label": "check robots.txt for `url`.      returns:         'allowed'           \u2014 expli"
     },
@@ -2707,9 +2707,9 @@
       "label": "Local fallback: Spawn headless Chromium with stealth to bypass Cloudflare.",
       "file_type": "rationale",
       "source_file": "backend/retriever.py",
-      "source_location": "L202",
+      "source_location": "L204",
       "_origin": "ast",
-      "id": "backend_retriever_rationale_202",
+      "id": "backend_retriever_rationale_204",
       "community": 4,
       "norm_label": "local fallback: spawn headless chromium with stealth to bypass cloudflare."
     },
@@ -2717,9 +2717,9 @@
       "label": "Scrape a URL with Firecrawl asynchronously, rotating keys if rate-limited or fai",
       "file_type": "rationale",
       "source_file": "backend/retriever.py",
-      "source_location": "L238",
+      "source_location": "L244",
       "_origin": "ast",
-      "id": "backend_retriever_rationale_238",
+      "id": "backend_retriever_rationale_244",
       "community": 4,
       "norm_label": "scrape a url with firecrawl asynchronously, rotating keys if rate-limited or fai"
     },
@@ -2727,9 +2727,9 @@
       "label": "Discover, fetch, and store sources for a loyalty program.      Args:",
       "file_type": "rationale",
       "source_file": "backend/retriever.py",
-      "source_location": "L304",
+      "source_location": "L310",
       "_origin": "ast",
-      "id": "backend_retriever_rationale_304",
+      "id": "backend_retriever_rationale_310",
       "community": 4,
       "norm_label": "discover, fetch, and store sources for a loyalty program.      args:"
     },
@@ -7335,7 +7335,7 @@
       "source_location": "L127",
       "_origin": "ast",
       "id": "tests_eval_ragas_retrieve_context",
-      "community": 25,
+      "community": 138,
       "norm_label": "_retrieve_context()"
     },
     {
@@ -7415,7 +7415,7 @@
       "source_location": "L128",
       "_origin": "ast",
       "id": "tests_eval_ragas_rationale_128",
-      "community": 25,
+      "community": 138,
       "norm_label": "qdrant dense search for the question \u2014 returns top 5 text chunks."
     },
     {
@@ -23368,11 +23368,11 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/retriever.py",
-      "source_location": "L135",
+      "source_location": "L137",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "backend_retriever_rationale_135",
-      "target": "backend_retriever_tavily_search"
+      "source": "backend_retriever_rationale_137",
+      "target": "backend_retriever_tavily_search",
+      "confidence_score": 1.0
     },
     {
       "relation": "references",
@@ -23400,11 +23400,11 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/retriever.py",
-      "source_location": "L173",
+      "source_location": "L175",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "backend_retriever_rationale_173",
-      "target": "backend_retriever_check_robots"
+      "source": "backend_retriever_rationale_175",
+      "target": "backend_retriever_check_robots",
+      "confidence_score": 1.0
     },
     {
       "relation": "references",
@@ -23432,21 +23432,21 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/retriever.py",
-      "source_location": "L202",
+      "source_location": "L204",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "backend_retriever_rationale_202",
-      "target": "backend_retriever_playwright_fetch"
+      "source": "backend_retriever_rationale_204",
+      "target": "backend_retriever_playwright_fetch",
+      "confidence_score": 1.0
     },
     {
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/retriever.py",
-      "source_location": "L238",
+      "source_location": "L244",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "backend_retriever_rationale_238",
-      "target": "backend_retriever_async_firecrawl_fetch"
+      "source": "backend_retriever_rationale_244",
+      "target": "backend_retriever_async_firecrawl_fetch",
+      "confidence_score": 1.0
     },
     {
       "relation": "references",
@@ -23474,11 +23474,11 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/retriever.py",
-      "source_location": "L304",
+      "source_location": "L310",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "backend_retriever_rationale_304",
-      "target": "backend_retriever_discover_sources"
+      "source": "backend_retriever_rationale_310",
+      "target": "backend_retriever_discover_sources",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -27149,9 +27149,9 @@
       "source_file": "frontend/components/analyst/ExportBar.tsx",
       "source_location": "L66",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frontend_components_analyst_exportbar",
-      "target": "frontend_components_analyst_exportbar_getfullurl",
-      "confidence_score": 1.0
+      "target": "frontend_components_analyst_exportbar_getfullurl"
     },
     {
       "relation": "contains",
@@ -42300,5 +42300,5 @@
       "source_file": "docker-compose.yml"
     }
   ],
-  "built_at_commit": "76db998e0bfc7d89cca8bdad6015aabb13a15518"
+  "built_at_commit": "fb0b6655b0859c3214a02a275181aeaab5ae9790"
 }
