@@ -1217,7 +1217,7 @@
       "label": "extract_fields()",
       "file_type": "code",
       "source_file": "backend/extractor.py",
-      "source_location": "L357",
+      "source_location": "L351",
       "_origin": "ast",
       "id": "backend_extractor_extract_fields",
       "community": 1,
@@ -1227,7 +1227,7 @@
       "label": "retry_failed_fields()",
       "file_type": "code",
       "source_file": "backend/extractor.py",
-      "source_location": "L503",
+      "source_location": "L497",
       "_origin": "ast",
       "id": "backend_extractor_retry_failed_fields",
       "community": 54,
@@ -1287,9 +1287,9 @@
       "label": "Extract all 44 fields across 9 categories from the provided sources in parallel.",
       "file_type": "rationale",
       "source_file": "backend/extractor.py",
-      "source_location": "L363",
+      "source_location": "L357",
       "_origin": "ast",
-      "id": "backend_extractor_rationale_363",
+      "id": "backend_extractor_rationale_357",
       "community": 1,
       "norm_label": "extract all 44 fields across 9 categories from the provided sources in parallel."
     },
@@ -1297,9 +1297,9 @@
       "label": "One-shot LLM retry for fields that failed gate verification.      Called by veri",
       "file_type": "rationale",
       "source_file": "backend/extractor.py",
-      "source_location": "L510",
+      "source_location": "L504",
       "_origin": "ast",
-      "id": "backend_extractor_rationale_510",
+      "id": "backend_extractor_rationale_504",
       "community": 54,
       "norm_label": "one-shot llm retry for fields that failed gate verification.      called by veri"
     },
@@ -1467,7 +1467,7 @@
       "label": ".report_failure()",
       "file_type": "code",
       "source_file": "backend/key_broker.py",
-      "source_location": "L58",
+      "source_location": "L59",
       "_origin": "ast",
       "id": "backend_key_broker_apikeybroker_report_failure",
       "community": 83,
@@ -1477,7 +1477,7 @@
       "label": ".report_last_key_failure()",
       "file_type": "code",
       "source_file": "backend/key_broker.py",
-      "source_location": "L75",
+      "source_location": "L76",
       "_origin": "ast",
       "id": "backend_key_broker_apikeybroker_report_last_key_failure",
       "community": 83,
@@ -1507,9 +1507,9 @@
       "label": "Stall an API key if it fails.",
       "file_type": "rationale",
       "source_file": "backend/key_broker.py",
-      "source_location": "L59",
+      "source_location": "L60",
       "_origin": "ast",
-      "id": "backend_key_broker_rationale_59",
+      "id": "backend_key_broker_rationale_60",
       "community": 83,
       "norm_label": "stall an api key if it fails."
     },
@@ -1517,9 +1517,9 @@
       "label": "Report failure on the key that was last checked out in the current thread.",
       "file_type": "rationale",
       "source_file": "backend/key_broker.py",
-      "source_location": "L76",
+      "source_location": "L77",
       "_origin": "ast",
-      "id": "backend_key_broker_rationale_76",
+      "id": "backend_key_broker_rationale_77",
       "community": 83,
       "norm_label": "report failure on the key that was last checked out in the current thread."
     },
@@ -19367,9 +19367,9 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/extractor.py",
-      "source_location": "L363",
+      "source_location": "L357",
       "weight": 1.0,
-      "source": "backend_extractor_rationale_363",
+      "source": "backend_extractor_rationale_357",
       "target": "backend_extractor_extract_fields",
       "confidence_score": 1.0
     },
@@ -19399,9 +19399,9 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/extractor.py",
-      "source_location": "L510",
+      "source_location": "L504",
       "weight": 1.0,
-      "source": "backend_extractor_rationale_510",
+      "source": "backend_extractor_rationale_504",
       "target": "backend_extractor_retry_failed_fields",
       "confidence_score": 1.0
     },
@@ -20054,21 +20054,21 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/key_broker.py",
-      "source_location": "L59",
+      "source_location": "L60",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "backend_key_broker_rationale_59",
-      "target": "backend_key_broker_apikeybroker_report_failure"
+      "source": "backend_key_broker_rationale_60",
+      "target": "backend_key_broker_apikeybroker_report_failure",
+      "confidence_score": 1.0
     },
     {
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/key_broker.py",
-      "source_location": "L76",
+      "source_location": "L77",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "backend_key_broker_rationale_76",
-      "target": "backend_key_broker_apikeybroker_report_last_key_failure"
+      "source": "backend_key_broker_rationale_77",
+      "target": "backend_key_broker_apikeybroker_report_last_key_failure",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -42300,5 +42300,5 @@
       "source_file": "docker-compose.yml"
     }
   ],
-  "built_at_commit": "92a5e046933029f5ff612fbda8841f0fbc677ee9"
+  "built_at_commit": "5754460b04c93bd25704a1d12619b21464c6fd25"
 }

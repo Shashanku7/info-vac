@@ -35,9 +35,10 @@ class APIKeyBroker:
             with self.lock:
                 now = time.time()
                 
-                # If all keys are in active cooldown, raise error to trigger fallback
-                if all(now < k["cooldown_until"] for k in self.keys):
-                    raise ValueError("All configured API keys are currently in cooldown or exhausted.")
+                # If all keys are in long daily quota cooldown (> 60s), raise error.
+                # If some keys are just in a short rate-limit cooldown (<= 60s), let the loop wait.
+                if all((k["cooldown_until"] - now) > 60 for k in self.keys):
+                    raise ValueError("All configured API keys are currently exhausted (daily quota reached).")
                 
                 # Find keys that are out of cooldown AND satisfy rate limit spacing
                 eligible = [
