@@ -518,8 +518,8 @@ async def discover_sources(
                     if existing:
                         stored.append(existing)
 
-            status_str = "success" if fetch_status == "success" else "failed"
-            reason_str = "" if fetch_status == "success" else f"Scrape failed ({fetch_status})"
+            status_str = "success" if fetch_status in ["success", "tavily_fallback"] else "failed"
+            reason_str = "" if fetch_status == "success" else f"Tavily Snippet ({fetch_status})"
             item = {
                 "url": candidate.url,
                 "status": status_str,
