@@ -63,6 +63,17 @@ function exportCSV(fields: ExtractedField[], programName: string) {
   }, 20000);
 }
 
+function getFullUrl(refUrl: string, fields: ExtractedField[]): string {
+  if (!refUrl) return refUrl;
+  const cleanRef = refUrl.endsWith("...") ? refUrl.slice(0, -3) : refUrl;
+  const match = fields.find(
+    (f) =>
+      f.source_url &&
+      (f.source_url === refUrl || f.source_url.startsWith(cleanRef))
+  );
+  return match?.source_url || refUrl;
+}
+
 // ── Shared styles used by both Single and Compare PDF layouts ──
 const createSharedStyles = (StyleSheet: any) =>
   StyleSheet.create({
@@ -210,16 +221,19 @@ export async function exportPDF(narrative: Narrative, fields: ExtractedField[], 
                 ? `"${ref.snippet.slice(0, 180)}${ref.snippet.length > 180 ? "…" : ""}"`
                 : "—";
               const displayUrl = ref.url.length > 65 ? ref.url.slice(0, 65) + "..." : ref.url;
+              const fullUrl = getFullUrl(ref.url, fields);
 
               return (
                 <View key={ref.url} wrap={true} style={styles.refItem} id={`ref-${ref.num}`}>
-                  <Link src={ref.url} style={[styles.refNum, { textDecoration: "none" }]}>
+                  <Link src={fullUrl} style={[styles.refNum, { textDecoration: "none" }]}>
                     [{ref.num}]
                   </Link>
                   <View style={styles.refBlock}>
                     <View style={styles.refRow}>
                       <Text style={styles.refLabel}>Source</Text>
-                      <Text style={[styles.refValue, { color: "#FD7F4F", textDecoration: "none" }]}>{displayUrl}</Text>
+                      <Link src={fullUrl} style={[styles.refValue, { color: "#FD7F4F", textDecoration: "none" }]}>
+                        {displayUrl}
+                      </Link>
                     </View>
                     <View style={styles.refRow}>
                       <Text style={styles.refLabel}>Evidence Quote</Text>
@@ -516,16 +530,19 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
                 ? `"${ref.snippet.slice(0, 150)}${ref.snippet.length > 150 ? "…" : ""}"`
                 : "—";
               const displayUrl = ref.url.length > 70 ? ref.url.slice(0, 70) + "..." : ref.url;
+              const fullUrl = getFullUrl(ref.url, allFields);
 
               return (
                 <View key={ref.url} wrap={true} style={styles.refItem} id={`ref-${ref.num}`}>
-                  <Link src={ref.url} style={[styles.refNum, { textDecoration: "none" }]}>
+                  <Link src={fullUrl} style={[styles.refNum, { textDecoration: "none" }]}>
                     [{ref.num}]
                   </Link>
                   <View style={styles.refBlock}>
                     <View style={styles.refRow}>
                       <Text style={styles.refLabel}>Source</Text>
-                      <Text style={[styles.refValue, { color: "#FD7F4F", textDecoration: "none" }]}>{displayUrl}</Text>
+                      <Link src={fullUrl} style={[styles.refValue, { color: "#FD7F4F", textDecoration: "none" }]}>
+                        {displayUrl}
+                      </Link>
                     </View>
                     <View style={styles.refRow}>
                       <Text style={styles.refLabel}>Evidence Quote</Text>
