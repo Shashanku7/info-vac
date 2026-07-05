@@ -50,3 +50,9 @@ sentence-transformers
 qdrant-client
 rapidfuzz
 langchain-text-splitters
+
+# Playwright Fallback
+playwright
+playwright-stealth
+beautifulsoup4
+

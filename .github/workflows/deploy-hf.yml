@@ -1,0 +1,36 @@
+name: Deploy to Hugging Face Spaces
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Push to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          
+          # Create an orphaned branch for deployment
+          git checkout --orphan hf-deploy
+          
+          # Remove problematic binary files
+          rm -rf documentation/*.png
+          
+          # Commit the clean snapshot
+          git add .
+          git commit -m "Automated Deploy from GitHub Actions (no binaries)"
+          
+          # Force push to Hugging Face using your HF_TOKEN
+          git push https://Shashank-u7:$HF_TOKEN@huggingface.co/spaces/Shashank-u7/infovac-backend hf-deploy:main --force

@@ -31,6 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN mkdir /ms-playwright && chmod 777 /ms-playwright && playwright install --with-deps chromium
+
 COPY . .
 
 EXPOSE 7860
