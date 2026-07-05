@@ -56,3 +56,7 @@ playwright
 playwright-stealth
 beautifulsoup4
 
+# DuckDuckGo Search Fallback
+duckduckgo-search
+
+

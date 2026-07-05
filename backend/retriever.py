@@ -133,12 +133,38 @@ class _Candidate:
 
 
 
+def _duckduckgo_fallback_search(query: str, source_type: str) -> list[_Candidate]:
+    """Fallback search using DuckDuckGo when Tavily fails or is out of credits."""
+    try:
+        from duckduckgo_search import DDGS
+        log.info("falling_back_to_duckduckgo", query=query[:80])
+        candidates = []
+        with DDGS() as ddgs:
+            results = ddgs.text(query, max_results=_MAX_RESULTS_PER_QUERY)
+            for r in results:
+                url = r.get("href", "").strip()
+                if not url:
+                    continue
+                title = r.get("title", "") or ""
+                snippet = r.get("body", "") or ""
+                classified = classify_source(url, title, snippet, source_type)
+                candidates.append(_Candidate(
+                    url=url,
+                    source_type=classified,
+                    title=title,
+                    tavily_snippet=snippet,
+                ))
+        return candidates
+    except Exception as exc:
+        log.error("duckduckgo_fallback_failed", error=str(exc)[:200])
+        return []
+
 def _tavily_search(keys: list[str], query: str, source_type: str) -> list[_Candidate]:
     """Run one Tavily query, rotating keys if rate-limited or failed."""
     from tavily import TavilyClient
     if not keys:
-        log.warning("no_tavily_keys_configured")
-        return []
+        log.warning("no_tavily_keys_configured_using_ddg_fallback")
+        return _duckduckgo_fallback_search(query, source_type)
         
     last_exc = None
     for k in keys:
@@ -167,8 +193,8 @@ def _tavily_search(keys: list[str], query: str, source_type: str) -> list[_Candi
         except Exception as exc:
             log.warning("tavily_key_failed_rotating", key_prefix=k[:6], error=str(exc)[:200])
             last_exc = exc
-    log.error("all_tavily_keys_failed", query=query[:80], error=str(last_exc))
-    return []
+    log.error("all_tavily_keys_failed_using_ddg_fallback", query=query[:80], error=str(last_exc))
+    return _duckduckgo_fallback_search(query, source_type)
 
 
 async def _check_robots(url: str, http: httpx.AsyncClient) -> str:
