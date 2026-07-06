@@ -49,7 +49,7 @@ function deriveStats(fields: ExtractedField[]) {
 
 async function fetchPrograms(): Promise<Program[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/programs`);
+    const res = await fetch(`${API_BASE}/api/programs`, { headers: { "ngrok-skip-browser-warning": "true" } });
     if (!res.ok) return [];
     return res.json();
   } catch {
@@ -59,7 +59,7 @@ async function fetchPrograms(): Promise<Program[]> {
 
 async function fetchAllFields(): Promise<ExtractedField[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/fields`);
+    const res = await fetch(`${API_BASE}/api/fields`, { headers: { "ngrok-skip-browser-warning": "true" } });
     if (!res.ok) return [];
     return res.json();
   } catch {

@@ -79,7 +79,9 @@ export async function getExtractedFields(
   // the admin page polls the fields directly if a dedicated endpoint is added.
   // Placeholder — returns empty array until backend adds the endpoint.
   try {
-    const res = await fetch(`${API_BASE}/api/programs/${programId}/fields`);
+    const res = await fetch(`${API_BASE}/api/programs/${programId}/fields`, {
+      headers: { "ngrok-skip-browser-warning": "true" }
+    });
     if (!res.ok) return [];
     return res.json();
   } catch {
