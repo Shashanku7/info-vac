@@ -519,9 +519,6 @@ async def discover_sources(
                         raise ValueError("Stealth browser extraction returned empty content")
                 except Exception as fallback_exc:
                     log.warning("playwright_scraping_failed_falling_back_to_tavily", url=candidate.url, error=str(fallback_exc)[:200])
-                    # Disable Playwright globally for subsequent URLs if it fails to launch/run
-                    global _PLAYWRIGHT_AVAILABLE
-                    _PLAYWRIGHT_AVAILABLE = False
                     
                     raw_content = candidate.tavily_snippet
                     fetch_method = "tavily_snippet"

@@ -83,7 +83,7 @@ export default function AnalystWorkspace() {
   // Fetch telemetry details
   useEffect(() => {
     if (!isMounted) return;
-    fetch(`${API_BASE}/api/programs`)
+    fetch(`${API_BASE}/api/programs`, { headers: { "ngrok-skip-browser-warning": "true" } })
       .then(res => res.ok ? res.json() : [])
       .then(data => {
         setAllPrograms(data);
@@ -97,7 +97,7 @@ export default function AnalystWorkspace() {
       })
       .catch(() => {});
 
-    fetch(`${API_BASE}/api/fields`)
+    fetch(`${API_BASE}/api/fields`, { headers: { "ngrok-skip-browser-warning": "true" } })
       .then(res => res.ok ? res.json() : [])
       .then(data => {
         if (data.length > 0) {
