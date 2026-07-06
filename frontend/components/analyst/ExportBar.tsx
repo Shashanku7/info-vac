@@ -277,8 +277,8 @@ export async function exportComparisonPDF(comparison: any, programNames: string[
   const programData = await Promise.all(
     comparison.program_ids.map(async (pid: string) => {
       const [fieldsRes, sourcesRes] = await Promise.all([
-        fetch(`${API_BASE}/api/programs/${pid}/fields`),
-        fetch(`${API_BASE}/api/programs/${pid}/sources`),
+        fetch(`${API_BASE}/api/programs/${pid}/fields`, { headers: { "ngrok-skip-browser-warning": "true" } }),
+        fetch(`${API_BASE}/api/programs/${pid}/sources`, { headers: { "ngrok-skip-browser-warning": "true" } }),
       ]);
       const fields: ExtractedField[] = fieldsRes.ok ? await fieldsRes.json() : [];
       const sources: LocalSource[] = sourcesRes.ok ? await sourcesRes.json() : [];
@@ -581,7 +581,7 @@ export async function exportComparisonCSV(comparison: any, programNames: string[
   // Fetch fields in parallel
   const programData = await Promise.all(
     comparison.program_ids.map(async (pid: string) => {
-      const fieldsRes = await fetch(`${API_BASE}/api/programs/${pid}/fields`);
+      const fieldsRes = await fetch(`${API_BASE}/api/programs/${pid}/fields`, { headers: { "ngrok-skip-browser-warning": "true" } });
       const fields: ExtractedField[] = fieldsRes.ok ? await fieldsRes.json() : [];
       return { id: pid, fields };
     })

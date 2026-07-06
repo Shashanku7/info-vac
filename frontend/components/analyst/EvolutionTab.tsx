@@ -23,7 +23,7 @@ export function EvolutionTab({ programId }: EvolutionTabProps) {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/programs/${programId}/evolution`);
+        const res = await fetch(`${API_BASE}/api/programs/${programId}/evolution`, { headers: { "ngrok-skip-browser-warning": "true" } });
         if (!res.ok) {
           const detail = await res.text().catch(() => "Unknown error");
           throw new Error(detail || `API ${res.status}`);
