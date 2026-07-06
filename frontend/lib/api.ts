@@ -24,7 +24,10 @@ export const API_BASE =
 // ── Helpers ───────────────────────────────────────────────────────────────────
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true",
+    },
     ...init,
   });
   if (!res.ok) {
@@ -157,7 +160,10 @@ export async function getComparisonChatHistory(
 /** Simple health check. Returns true if the backend is reachable. */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/health`, {
+      cache: "no-store",
+      headers: { "ngrok-skip-browser-warning": "true" },
+    });
     return res.ok;
   } catch {
     return false;
